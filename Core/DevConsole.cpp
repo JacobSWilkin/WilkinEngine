@@ -40,6 +40,12 @@ void DevConsole::Startup()
 
 void DevConsole::Shutdown()
 {
+	UnsubscribeEventCallbackFunction("KeyPressed", Event_KeyPressed);
+	UnsubscribeEventCallbackFunction("CharInput", Event_CharInput);
+	UnsubscribeEventCallbackFunction("EchoCommand", Event_EchoCommand);
+	UnsubscribeEventCallbackFunction("Help", Command_Help);
+	UnsubscribeEventCallbackFunction("Clear", Command_Clear);
+
 	delete m_insertionPointBlinkTimer;
 	m_insertionPointBlinkTimer = nullptr;
 }
@@ -66,29 +72,33 @@ void DevConsole::Execute(std::string const& consoleCommandText, bool echoCommand
 		AddLine(DevConsole::INFO_MINOR, consoleCommandText);
 	}
 	m_commandHistory.push_back(consoleCommandText);
-	m_historyIndex = static_cast<int>(m_inputText.size()) - 1;
+	m_historyIndex = static_cast<int>(m_commandHistory.size());
 
-	Strings commandParts = SplitStringOnDelimiter(consoleCommandText, ' ');
+	Strings commandParts = TokenizeCmdLine(consoleCommandText);
 	if (commandParts.empty())
 	{
 		return;
 	}
 
 	std::string eventName = commandParts[0];
-	
 	EventArgs args;
-	for (int i = 1; i < (int)commandParts.size(); ++i) // Skip zero command and start at eventargs
-	{
-		std::string const& argKeyEqualsValue = commandParts[i];
-		Strings keyValue = SplitStringOnDelimiter(argKeyEqualsValue, '=');
 
-		if (keyValue.size() != 2) 
+	// Skip zero command and start at EventArgs
+	for (int commandIndex = 1; commandIndex < static_cast<int>(commandParts.size()); ++commandIndex) 
+	{
+		std::string const& argKeyEqualsValue = commandParts[commandIndex];
+		size_t equalsPos = argKeyEqualsValue.find('=');
+
+		if (equalsPos == std::string::npos)
 		{
 			g_theDevConsole->AddLine(DevConsole::ERROR_MAJOR, "Error: Arguments must be key=value!");
 			return;
 		}
 
-		args.SetValue(keyValue[0], keyValue[1]);
+		std::string key = argKeyEqualsValue.substr(0, equalsPos);
+		std::string value = argKeyEqualsValue.substr(equalsPos + 1);
+
+		args.SetValue(key, value);
 	}
 	g_theEventSystem->FireEvent(eventName, args);
 }
@@ -98,10 +108,10 @@ void DevConsole::AddLine(Rgba8 const& color, std::string const& text)
 	std::scoped_lock<std::mutex> lock(m_devConsoleMutex);
 
 	Strings separateLines = SplitStringOnDelimiter(text, '\n');
-	for (int i = 0; i < (int)separateLines.size(); ++i)
+	for (int lineIndex = 0; lineIndex < static_cast<int>(separateLines.size()); ++lineIndex)
 	{
 		DevConsoleLine newLine;
-		newLine.m_text = separateLines[i];
+		newLine.m_text = separateLines[lineIndex];
 		newLine.m_color = color;
 		newLine.m_frameNumberPrinted = m_frameNumber;
 		newLine.m_timePrinted = GetCurrentTimeSeconds();
@@ -147,6 +157,54 @@ void DevConsole::Render(AABB2 const& bounds, Renderer* rendererOverride) const
 	}
 }
 
+void DevConsole::ExecuteXmlCommandScriptNode(XmlElement const& commandScriptXmlElement)
+{
+	XmlElement const* childElement = commandScriptXmlElement.FirstChildElement();
+
+	while (childElement != nullptr)
+	{
+		std::string cmdString = childElement->Name();
+		XmlAttribute const* attribute = childElement->FirstAttribute();
+
+		while (attribute != nullptr)
+		{
+			cmdString += " ";
+			cmdString += attribute->Name();
+			cmdString += "=";
+
+			cmdString += "\"";
+			cmdString += attribute->Value();
+			cmdString += "\"";
+
+			attribute = attribute->Next();
+		}
+
+		Execute(cmdString, false);
+		childElement = childElement->NextSiblingElement();
+	}
+}
+
+void DevConsole::ExecuteXmlCommandScriptFile(std::string const& filePathName)
+{
+	XmlDocument document;
+	XmlError result = document.LoadFile(filePathName.c_str());
+
+	if (result != tinyxml2::XMLError::XML_SUCCESS)
+	{
+		AddLine(ERROR_MAJOR, Stringf("Failed to load XML script file: %s", filePathName.c_str()));
+		return;
+	}
+
+	XmlElement const* rootElement = document.RootElement();
+	if (rootElement == nullptr)
+	{
+		AddLine(ERROR_MAJOR, Stringf("XML script file has no root element: %s", filePathName.c_str()));
+		return;
+	}
+
+	ExecuteXmlCommandScriptNode(*rootElement);
+}
+
 DevConsoleMode DevConsole::GetMode() const
 {
 	return m_mode;
@@ -161,11 +219,11 @@ void DevConsole::ToggleMode(DevConsoleMode mode)
 {
 	if (m_mode == mode)
 	{
-		SetMode(DevConsoleMode::HIDDEN); // Toggle off
+		SetMode(DevConsoleMode::HIDDEN);
 	}
 	else
 	{
-		SetMode(mode); // Toggle on (switch different mode on)
+		SetMode(mode);
 	}
 }
 
@@ -385,7 +443,7 @@ void DevConsole::Render_OpenFull(AABB2 const& bounds, Renderer& renderer, Bitmap
 
 	std::vector<Vertex_PCU> consoleLineVerts;
 	// For loop through the lines
-	for (int lineIndex = (int)m_lines.size() - 1; lineIndex >= 0; --lineIndex)
+	for (int lineIndex = static_cast<int>(m_lines.size()) - 1; lineIndex >= 0; --lineIndex)
 	{
 		DevConsoleLine const& text = m_lines[lineIndex];
 

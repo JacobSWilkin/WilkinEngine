@@ -48,6 +48,9 @@ public:
 	void AddLine(Rgba8 const& color, std::string const& text); // Set and push back
 	void Render(AABB2 const& bounds, Renderer* rendererOverride = nullptr) const; // Render devConsole with BitmapFont
 
+	void ExecuteXmlCommandScriptNode(XmlElement const& commandScriptXmlElement);
+	void ExecuteXmlCommandScriptFile(std::string const& filePathName);
+
 	DevConsoleMode GetMode() const;
 	void SetMode(DevConsoleMode mode);
 	void ToggleMode(DevConsoleMode mode);
