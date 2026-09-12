@@ -1,6 +1,7 @@
 #pragma once
 #include "Engine/Core/Vertex_PCU.h"
 #include "Engine/Core/Vertex_PCUTBN.hpp"
+#include "Engine/Core/Vertex_PCUTBNSkinned.hpp"
 #include "Engine/Math/AABB2.h"
 #include <Vector>
 // -----------------------------------------------------------------------------
@@ -9,6 +10,7 @@ constexpr float DEGREES_PER_CAPSULESLICE = 180.f / (static_cast<float>(NUM_CAPSU
 constexpr int NUM_DISC_SLICES = 30;
 // -----------------------------------------------------------------------------
 class  Mat44;
+struct Plane2;
 struct AABB3;
 struct OBB2;
 struct OBB3;
@@ -33,6 +35,7 @@ void AddVertsForLineSegment2D(std::vector<Vertex_PCU>& verts, Vec2 const& start,
 void AddVertsForArrow2D(std::vector<Vertex_PCU>& verts, Vec2 tailPos, Vec2 tipPos, float arrowSize, float lineThickness, Rgba8 const& color);
 void AddVertsForArc2D(std::vector<Vertex_PCU>& verts, Vec2 const& center, float radius, float startDegrees, float arcDegrees, Rgba8 const& color = Rgba8::WHITE, int numSegments = 32);
 void AddVertsForDashedLine2D(std::vector<Vertex_PCU>& verts, Vec2 const& start, Vec2 const& end, float dashLength = 3.f, float gapLength = 1.f, float thickness = 1.f, Rgba8 const& color = Rgba8::WHITE);
+void AddVertsForPlane2D(std::vector<Vertex_PCU>& verts, Plane2 const& plane, Vec2 const& worldOffset, float halfLength, float thickness, Rgba8 const& color = Rgba8::WHITE);
 // -----------------------------------------------------------------------------
 // 3D Verts utils Vertex_PCU
 void AddVertsForQuad3D(std::vector<Vertex_PCU>& verts, Vec3 const& bottomLeft, Vec3 const& bottomRight, Vec3 const& topRight,
@@ -44,7 +47,9 @@ void AddVertsForSphere3D(std::vector<Vertex_PCU>& verts, Vec3 const& center, flo
 	AABB2 const& UVs = AABB2(Vec2::ZERO, Vec2::ONE), int numSlices = 32, int numStacks = 16);
 void AddVertsForCylinderZ3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, float radius, float height, Rgba8 color = Rgba8::WHITE, AABB2 UVs = AABB2::ZERO_TO_ONE, int numSlices = 32);
 void AddVertsForCylinder3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color = Rgba8::WHITE,
-	AABB2 const& UVs = AABB2(Vec2::ZERO, Vec2::ONE), int numSlices = 8);
+	AABB2 const& UVs = AABB2(Vec2::ZERO, Vec2::ONE), int numSlices = 8, bool drawCaps = true);
+void AddVertsForTaperedCylinder3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, Vec3 const& end, float radiusStart, float radiusEnd, Rgba8 const& color = Rgba8::WHITE,
+	AABB2 const& UVs = AABB2::ZERO_TO_ONE, int numSlices = 16);
 void AddVertsForCone3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color = Rgba8::WHITE,
 	AABB2 const& UVs = AABB2(Vec2::ZERO, Vec2::ONE), int numSlices = 8);
 void AddVertsForArrow3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color = Rgba8::WHITE, int numSlices = 32);
@@ -72,6 +77,38 @@ void AddVertsForSphere3D(std::vector<Vertex_PCUTBN>& vertexes, std::vector<unsig
 void AddVertsForCylinderZ3D(std::vector<Vertex_PCUTBN>& vertexes, std::vector<unsigned int>& indexes, Vec3 const& start, float radius, float height,
 	Rgba8 const& color = Rgba8::WHITE, AABB2 const& UVs = AABB2::ZERO_TO_ONE, int numSlices = 8);
 void AddVertsForCylinder3D(std::vector<Vertex_PCUTBN>& vertexes, Vec3 const& start, Vec3 const& end, float radius,
-	Rgba8 const& color = Rgba8::WHITE, AABB2 const& UVs = AABB2::ZERO_TO_ONE, int numSlices = 8);
+	Rgba8 const& color = Rgba8::WHITE, AABB2 const& UVs = AABB2::ZERO_TO_ONE, int numSlices = 8, bool drawDiscs = true);
+void AddVertsForIndexedCylinder3D(std::vector<Vertex_PCUTBN>& vertexes, std::vector<unsigned int>& indices, Vec3 const& start, Vec3 const& end, float radius,
+	Rgba8 const& color = Rgba8::WHITE, AABB2 const& UVs = AABB2::ZERO_TO_ONE, int numSlices = 8, bool drawDiscs = true);
+void AddVertsForTaperedCylinderTBN3D(std::vector<Vertex_PCUTBN>& verts, Vec3 const& start, Vec3 const& end, float radiusStart, float radiusEnd, Rgba8 const& color = Rgba8::WHITE,
+	AABB2 const& UVs = AABB2::ZERO_TO_ONE, int numSlices = 16);
+void AddVertsForIndexedTaperedCylinder3D(std::vector<Vertex_PCUTBN>& verts, std::vector<unsigned int>& indices, Vec3 const& start, Vec3 const& end, float radiusStart, float radiusEnd, Rgba8 const& color = Rgba8::WHITE,
+	AABB2 const& UVs = AABB2::ZERO_TO_ONE, int numSlices = 16, bool drawDiscs = true);
 void AddVertsForCylinderOriented3D(std::vector<Vertex_PCUTBN>& vertexes, std::vector<unsigned int>& indexes, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color, AABB2 const& UVs, int numSlices);
+void AddVertsForConeTBN3D(std::vector<Vertex_PCUTBN>& vertexes, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color = Rgba8::WHITE,
+	AABB2 const& UVs = AABB2(Vec2::ZERO, Vec2::ONE), int numSlices = 8, bool drawDisc = true);
+void AddVertsForIndexedCone3D(std::vector<Vertex_PCUTBN>& vertexes, std::vector<unsigned int>& indices, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color = Rgba8::WHITE,
+	AABB2 const& UVs = AABB2(Vec2::ZERO, Vec2::ONE), int numSlices = 8, bool drawDisc = true);
 // -----------------------------------------------------------------------------
+// 3D utils using Skinned Vertex
+float SmoothBoneWeights(Vec3 const& pos, Vec3 const& startPos, Vec3 const& boneDirNormalized, float boneLength);
+void AddSkinnedVertsForQuad3D(std::vector<Vertex_PCUTBNSkinned>& verts, Vec3 const& bottomLeft, Vec3 const& bottomRight, Vec3 const& topRight, Vec3 const& topLeft, int boneIndex,
+	Rgba8 const& color = Rgba8::WHITE, AABB2 const& UVs = AABB2::ZERO_TO_ONE);
+void AddSkinnedVertsForQuad3D_Blended(std::vector<Vertex_PCUTBNSkinned>& verts, Vec3 const& bottomLeft, Vec3 const& bottomRight, Vec3 const& topRight, Vec3 const& topLeft, int parentBoneIndex, int childBoneIndex, Vec3 const& startPos, Vec3 const& boneDirNormalized, float boneLength, 
+	Rgba8 const& color, AABB2 const& UVs);
+void AddSkinnedVertsForIndexedQuad3D_Blended(std::vector<Vertex_PCUTBNSkinned>& verts, std::vector<unsigned int>& indices, Vec3 const& bottomLeft, Vec3 const& bottomRight, Vec3 const& topRight, Vec3 const& topLeft, int parentBoneIndex, int childBoneIndex, Vec3 const& startPos, Vec3 const& boneDirNormalized, float boneLength,
+	Rgba8 const& color, AABB2 const& UVs);
+void AddSkinnedVertsForSphere(std::vector<Vertex_PCUTBNSkinned>& vertexes, float radius, int boneIndex, Vec3 const& boneBindPosition,
+	Rgba8 const& color = Rgba8::WHITE, AABB2 const& UVs = AABB2::ZERO_TO_ONE, int numSlices = 16, int numStacks = 8);
+void AddSkinnedVertsForIndexedSphere(std::vector<Vertex_PCUTBNSkinned>& vertexes, std::vector<unsigned int>& indices, float radius, int boneIndex, Vec3 const& boneBindPosition,
+	Rgba8 const& color = Rgba8::WHITE, AABB2 const& UVs = AABB2::ZERO_TO_ONE, int numSlices = 16, int numStacks = 8);
+void AddSkinnedVertsForCylinder(std::vector<Vertex_PCUTBNSkinned>& vertexes, Vec3 const& startPos, Vec3 const& endPos, float radius, int boneIndex,
+	Rgba8 const& color = Rgba8::WHITE, int numSlices = 16);
+void AddSkinnedVertsForCylinder_Blended(std::vector<Vertex_PCUTBNSkinned>& vertexes, Vec3 const& startPos, Vec3 const& endPos, float radius, int parentBoneIndex, int childBoneIndex, 
+	Rgba8 const& color = Rgba8::WHITE, int numSlices = 16);
+void AddSkinnedVertsForIndexedCylinder_Blended(std::vector<Vertex_PCUTBNSkinned>& vertexes, std::vector<unsigned int>& indices, Vec3 const& startPos, Vec3 const& endPos, float radius, int parentBoneIndex, int childBoneIndex,
+	Rgba8 const& color = Rgba8::WHITE, int numSlices = 16);
+void AddSkinnedVertsForTaperedCylinder(std::vector<Vertex_PCUTBNSkinned>& verts, Vec3 const& start, Vec3 const& end, float radiusStart, float radiusEnd, int boneIndex,
+	Rgba8 const& color = Rgba8::WHITE, int numSlices = 16);
+void AddSkinnedVertsForCone(std::vector<Vertex_PCUTBNSkinned>& vertexes, Vec3 const& start, Vec3 const& end, float radius, int boneIndex, 
+	Rgba8 const& color = Rgba8::WHITE, AABB2 const& UVs = AABB2(Vec2::ZERO, Vec2::ONE), int numSlices = 8);

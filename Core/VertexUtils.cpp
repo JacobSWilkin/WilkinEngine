@@ -3,6 +3,7 @@
 #include "Engine/Math/MathUtils.h"
 #include "Engine/Math/AABB3.hpp"
 #include "Engine/Math/OBB3.hpp"
+#include "Engine/Math/Plane2.hpp"
 
 void TransformVertexArrayXY3D(int numVerts, Vertex_PCU* verts, float uniformScaleXY, float rotationDegreesAboutZ, Vec2 const& translationXY)
 {
@@ -261,6 +262,18 @@ void AddVertsForDashedLine2D(std::vector<Vertex_PCU>& verts, Vec2 const& start, 
 	}
 }
 
+void AddVertsForPlane2D(std::vector<Vertex_PCU>& verts, Plane2 const& plane, Vec2 const& worldOffset, float halfLength, float thickness, Rgba8 const& color)
+{
+	// Our plane center in world space
+	Vec2 planeCenter = plane.GetPlaneCenter() + worldOffset;
+
+	Vec2 tangent = plane.m_planeNormal.GetRotated90Degrees();
+	Vec2 posA = planeCenter - tangent * halfLength;
+	Vec2 posB = planeCenter + tangent * halfLength;
+
+	AddVertsForLineSegment2D(verts, posA, posB, thickness, color);
+}
+
 void AddVertsForQuad3D(std::vector<Vertex_PCU>& verts, Vec3 const& bottomLeft, Vec3 const& bottomRight, Vec3 const& topRight, Vec3 const& topLeft, Rgba8 const& color, AABB2 const& UVs)
 {
 	// Triangle A
@@ -473,7 +486,7 @@ void AddVertsForCylinderZ3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, f
 	TransformVertexArray3D(verts, matrix);
 }
 
-void AddVertsForCylinder3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color, AABB2 const& UVs, int numSlices)
+void AddVertsForCylinder3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color, AABB2 const& UVs, int numSlices, bool drawCaps)
 {
 	UNUSED(UVs);
 
@@ -516,21 +529,27 @@ void AddVertsForCylinder3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, Ve
 		Vec2 uv_center_bottom = Vec2::ONEHALF;
 
 		// Top disc
-		verts.push_back(Vertex_PCU(tR, color, uv_tR_disc));
-		verts.push_back(Vertex_PCU(tL, color, uv_tL_disc));
-		verts.push_back(Vertex_PCU(end, color, uv_center_top));
+		if (drawCaps)
+		{
+			verts.push_back(Vertex_PCU(tR, color, uv_tR_disc));
+			verts.push_back(Vertex_PCU(tL, color, uv_tL_disc));
+			verts.push_back(Vertex_PCU(end, color, uv_center_top));
+		}
 
 		// Cylinder aabb
 		AddVertsForQuad3D(verts, bR, bL, tL, tR, color, quadUVs);
 
 		// Bottom disc
-		verts.push_back(Vertex_PCU(bL, color, uv_bL_disc));
-		verts.push_back(Vertex_PCU(bR, color, uv_bR_disc));
-		verts.push_back(Vertex_PCU(start, color, uv_center_bottom));
+		if (drawCaps)
+		{
+			verts.push_back(Vertex_PCU(bL, color, uv_bL_disc));
+			verts.push_back(Vertex_PCU(bR, color, uv_bR_disc));
+			verts.push_back(Vertex_PCU(start, color, uv_center_bottom));
+		}
 	}
 }
 
-void AddVertsForCylinder3D(std::vector<Vertex_PCUTBN>& vertexes, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color, AABB2 const& UVs, int numSlices)
+void AddVertsForCylinder3D(std::vector<Vertex_PCUTBN>& vertexes, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color, AABB2 const& UVs, int numSlices, bool drawDiscs)
 {
 	UNUSED(UVs);
 
@@ -591,17 +610,376 @@ void AddVertsForCylinder3D(std::vector<Vertex_PCUTBN>& vertexes, Vec3 const& sta
 		Vec3 bitangent = (edge2 * rightUV.x - edge1 * upUV.x).GetNormalized();
 
 		// Top disc
-		vertexes.push_back(Vertex_PCUTBN(tR, color, uv_tR_disc, tangent, bitangent, iBasis));
-		vertexes.push_back(Vertex_PCUTBN(tL, color, uv_tL_disc, tangent, bitangent, iBasis));
-		vertexes.push_back(Vertex_PCUTBN(end, color, uv_center_top, tangent, bitangent, iBasis));
+		if (drawDiscs)
+		{
+			vertexes.push_back(Vertex_PCUTBN(tR, color, uv_tR_disc, tangent, bitangent, iBasis));
+			vertexes.push_back(Vertex_PCUTBN(tL, color, uv_tL_disc, tangent, bitangent, iBasis));
+			vertexes.push_back(Vertex_PCUTBN(end, color, uv_center_top, tangent, bitangent, iBasis));
+		}
 
 		// Cylinder body
 		AddVertsForQuad3D(vertexes, bR, bL, tL, tR, color, quadUVs);
 
 		// Bottom disc
-		vertexes.push_back(Vertex_PCUTBN(bL, color, uv_bL_disc, tangent, bitangent, -iBasis));
-		vertexes.push_back(Vertex_PCUTBN(bR, color, uv_bR_disc, tangent, bitangent, -iBasis));
-		vertexes.push_back(Vertex_PCUTBN(start, color, uv_center_bottom, tangent, bitangent, -iBasis));
+		if (drawDiscs)
+		{
+			vertexes.push_back(Vertex_PCUTBN(bL, color, uv_bL_disc, tangent, bitangent, -iBasis));
+			vertexes.push_back(Vertex_PCUTBN(bR, color, uv_bR_disc, tangent, bitangent, -iBasis));
+			vertexes.push_back(Vertex_PCUTBN(start, color, uv_center_bottom, tangent, bitangent, -iBasis));
+		}
+	}
+}
+
+void AddVertsForIndexedCylinder3D(std::vector<Vertex_PCUTBN>& vertexes, std::vector<unsigned int>& indices, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color, AABB2 const& UVs, int numSlices, bool drawDiscs)
+{
+	UNUSED(UVs);
+
+	Vec3 iBasis = (end - start).GetNormalized();
+
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+	jBasis.Normalize();
+
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis).GetNormalized();
+
+	float step = 360.f / numSlices;
+	unsigned int base = static_cast<unsigned int>(vertexes.size());
+
+	for (int sliceIndex = 0; sliceIndex <= numSlices; ++sliceIndex)
+	{
+		float startDeg = sliceIndex * step;
+		float u = static_cast<float>(sliceIndex) / numSlices;
+
+		Vec3 dir = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+
+		Vec3 bottom = start + dir * radius;
+		Vec3 top = end + dir * radius;
+
+		Vec3 normal = dir;
+		Vec3 tangent = CrossProduct3D(Vec3::ZAXE, normal).GetNormalized();
+		Vec3 bitangent = CrossProduct3D(normal, tangent);
+
+		vertexes.push_back(Vertex_PCUTBN(bottom, color, Vec2(u, 0), tangent, bitangent, normal));
+		vertexes.push_back(Vertex_PCUTBN(top, color, Vec2(u, 1), tangent, bitangent, normal));
+	}
+
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		unsigned int i0 = base + sliceIndex * 2;
+		unsigned int i1 = i0 + 1;
+		unsigned int i2 = i0 + 2;
+		unsigned int i3 = i0 + 3;
+
+		indices.push_back(i0);
+		indices.push_back(i2);
+		indices.push_back(i3);
+
+		indices.push_back(i0);
+		indices.push_back(i3);
+		indices.push_back(i1);
+	}
+
+	// Top Disc
+	if (drawDiscs)
+	{
+		unsigned int centerIndex = static_cast<unsigned int>(vertexes.size());
+		vertexes.push_back(Vertex_PCUTBN(end, color, Vec2::ONEHALF, Vec3::XAXE, Vec3::YAXE, iBasis));
+
+		for (int sliceIndex = 0; sliceIndex <= numSlices; ++sliceIndex)
+		{
+			float startDeg = sliceIndex * step;
+			Vec3 dir = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+
+			Vec3 position = end + dir * radius;
+			Vec2 uv = GetDiscUV(position, end, jBasis, kBasis, radius);
+
+			vertexes.push_back(Vertex_PCUTBN(position, color, uv, Vec3::XAXE, Vec3::YAXE, iBasis));
+		}
+
+		for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+		{
+			indices.push_back(centerIndex);
+			indices.push_back(centerIndex + sliceIndex + 1);
+			indices.push_back(centerIndex + sliceIndex + 2);
+		}
+	}
+
+	// Bottom Disc
+	if (drawDiscs)
+	{
+		unsigned int centerIndex = static_cast<unsigned int>(vertexes.size());
+		vertexes.push_back(Vertex_PCUTBN(start, color, Vec2::ONEHALF, Vec3::XAXE, Vec3::YAXE, -iBasis));
+
+		for (int sliceIndex = 0; sliceIndex <= numSlices; ++sliceIndex)
+		{
+			float startDeg = sliceIndex * step;
+			Vec3 dir = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+
+			Vec3 position = start + dir * radius;
+			Vec2 uv = GetDiscUV(position, start, jBasis, kBasis, radius);
+
+			vertexes.push_back(Vertex_PCUTBN(position, color, uv, Vec3::XAXE, Vec3::YAXE, -iBasis));
+		}
+
+		for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+		{
+			indices.push_back(centerIndex);
+			indices.push_back(centerIndex + sliceIndex + 2);
+			indices.push_back(centerIndex + sliceIndex + 1);
+		}
+	}
+}
+
+void AddVertsForTaperedCylinderTBN3D(std::vector<Vertex_PCUTBN>& verts, Vec3 const& start, Vec3 const& end, float radiusStart, float radiusEnd, Rgba8 const& color, AABB2 const& UVs, int numSlices)
+{
+	UNUSED(UVs);
+
+	float sliceStep = 360.f / numSlices;
+
+	Vec3 iBasis = end - start;
+	iBasis.Normalize();
+
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+	jBasis.Normalize();
+
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis);
+	kBasis.Normalize();
+
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		float startDeg = sliceIndex * sliceStep;
+		float endDeg = (sliceIndex + 1) * sliceStep;
+
+		float uvLeft = RangeMap(startDeg, 0.f, 360.f, 0.f, 1.f);
+		float uvRight = RangeMap(endDeg, 0.f, 360.f, 0.f, 1.f);
+
+		// Direction vectors on the circle
+		Vec3 dirR = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+		Vec3 dirL = CosDegrees(endDeg) * jBasis + SinDegrees(endDeg) * kBasis;
+
+		Vec3 bR = start + dirR * radiusStart;
+		Vec3 bL = start + dirL * radiusStart;
+		Vec3 tR = end + dirR * radiusEnd;
+		Vec3 tL = end + dirL * radiusEnd;
+
+		Vec3 normal_bL = bL.GetNormalized();
+		Vec3 normal_bR = bR.GetNormalized();
+		Vec3 normal_tL = tL.GetNormalized();
+		Vec3 normal_tR = tR.GetNormalized();
+
+		// UVs
+		Vec2 uv_tR_disc = GetDiscUV(tR, end, jBasis, kBasis, radiusEnd);
+		Vec2 uv_tL_disc = GetDiscUV(tL, end, jBasis, kBasis, radiusEnd);
+		Vec2 uv_center_top = Vec2::ONEHALF;
+		AABB2 quadUVs = AABB2(uvLeft, 0.f, uvRight, 1.f);
+		Vec2 uv_bR_disc = GetDiscUV(bR, start, jBasis, kBasis, radiusStart);
+		Vec2 uv_bL_disc = GetDiscUV(bL, start, jBasis, kBasis, radiusStart);
+		Vec2 uv_center_bottom = Vec2::ONEHALF;
+
+		Vec2 uv_bL = Vec2(quadUVs.m_mins.x, quadUVs.m_mins.y);
+		Vec2 uv_bR = Vec2(quadUVs.m_maxs.x, quadUVs.m_mins.y);
+		Vec2 uv_tL = Vec2(quadUVs.m_mins.x, quadUVs.m_maxs.y);
+		Vec2 uv_tR = Vec2(quadUVs.m_maxs.x, quadUVs.m_maxs.y);
+
+		Vec3 edge1 = bR - bL;
+		Vec3 edge2 = tL - bL;
+		Vec2 rightUV = uv_bR - uv_bL;
+		Vec2 upUV = uv_tL - uv_bL;
+
+		Vec3 tangent = (edge1 * upUV.y - edge2 * rightUV.y).GetNormalized();
+		Vec3 bitangent = (edge2 * rightUV.x - edge1 * upUV.x).GetNormalized();
+
+		// Top cap
+		verts.push_back(Vertex_PCUTBN(tR, color, uv_tR_disc, tangent, bitangent, iBasis));
+		verts.push_back(Vertex_PCUTBN(tL, color, uv_tL_disc, tangent, bitangent, iBasis));
+		verts.push_back(Vertex_PCUTBN(end, color, uv_center_top, tangent, bitangent, iBasis));
+
+		// Side quad
+		AddVertsForQuad3D(verts, bR, bL, tL, tR, color, quadUVs);
+
+		// Bottom cap
+		verts.push_back(Vertex_PCUTBN(bL, color, uv_bL_disc, tangent, bitangent, -iBasis));
+		verts.push_back(Vertex_PCUTBN(bR, color, uv_bR_disc, tangent, bitangent, -iBasis));
+		verts.push_back(Vertex_PCUTBN(start, color, uv_center_bottom, tangent, bitangent, -iBasis));
+	}
+}
+
+void AddVertsForIndexedTaperedCylinder3D(std::vector<Vertex_PCUTBN>& verts, std::vector<unsigned int>& indices, Vec3 const& start, Vec3 const& end, float radiusStart, float radiusEnd, Rgba8 const& color, AABB2 const& UVs, int numSlices, bool drawDiscs)
+{
+	UNUSED(UVs);
+
+	float sliceStep = 360.f / numSlices;
+
+	Vec3 iBasis = (end - start).GetNormalized();
+
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+	jBasis.Normalize();
+
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis).GetNormalized();
+
+	float height = (end - start).GetLength();
+	float slope = (radiusStart - radiusEnd) / height;
+	unsigned int baseVertex = static_cast<unsigned int>(verts.size());
+
+	// Building the body
+	for (int sliceIndex = 0; sliceIndex <= numSlices; ++sliceIndex)
+	{
+		float startDeg = sliceIndex * sliceStep;
+		float u = static_cast<float>(sliceIndex) / numSlices;
+
+		Vec3 dir = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+
+		Vec3 bottom = start + dir * radiusStart;
+		Vec3 top = end + dir * radiusEnd;
+		Vec3 normal = (dir - iBasis * slope).GetNormalized();
+
+		Vec2 uvB = Vec2(u, 0.f);
+		Vec2 uvT = Vec2(u, 1.f);
+
+		Vec3 tangent = CrossProduct3D(Vec3::ZAXE, normal).GetNormalized();
+		Vec3 bitangent = CrossProduct3D(normal, tangent);
+
+		verts.push_back(Vertex_PCUTBN(bottom, color, uvB, tangent, bitangent, normal));
+		verts.push_back(Vertex_PCUTBN(top, color, uvT, tangent, bitangent, normal));
+	}
+
+	// Body indices
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		unsigned int i0 = baseVertex + sliceIndex * 2;
+		unsigned int i1 = i0 + 1;
+		unsigned int i2 = i0 + 2;
+		unsigned int i3 = i0 + 3;
+
+		// Triangle 1
+		indices.push_back(i0);
+		indices.push_back(i2);
+		indices.push_back(i3);
+
+		// Triangle 2
+		indices.push_back(i0);
+		indices.push_back(i3);
+		indices.push_back(i1);
+	}
+
+	// Check for drawing discs
+	if (drawDiscs)
+	{
+		// Top Disc
+		unsigned int topCenterIndex = static_cast<unsigned int>(verts.size());
+		verts.push_back(Vertex_PCUTBN(end, color, Vec2(0.5f, 0.5f), Vec3::XAXE, Vec3::YAXE, iBasis));
+
+		for (int sliceIndex = 0; sliceIndex <= numSlices; ++sliceIndex)
+		{
+			float startDeg = sliceIndex * sliceStep;
+			Vec3 dir = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+
+			Vec3 position = end + dir * radiusEnd;
+			Vec2 uv = GetDiscUV(position, end, jBasis, kBasis, radiusEnd);
+
+			verts.push_back(Vertex_PCUTBN(position, color, uv, Vec3::XAXE, Vec3::YAXE, iBasis));
+		}
+
+		for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+		{
+			indices.push_back(topCenterIndex);
+			indices.push_back(topCenterIndex + sliceIndex + 1);
+			indices.push_back(topCenterIndex + sliceIndex + 2);
+		}
+
+		// Bottom disc
+		unsigned int bottomCenterIndex = static_cast<unsigned int>(verts.size());
+		verts.push_back(Vertex_PCUTBN(start, color, Vec2(0.5f, 0.5f), Vec3::XAXE, Vec3::YAXE, -iBasis));
+
+		for (int sliceIndex = 0; sliceIndex <= numSlices; ++sliceIndex)
+		{
+			float startDeg = sliceIndex * sliceStep;
+			Vec3 dir = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+	 
+			Vec3 position = start + dir * radiusStart;
+			Vec2 uv = GetDiscUV(position, start, jBasis, kBasis, radiusStart);
+
+			verts.push_back(Vertex_PCUTBN(position, color, uv, Vec3::XAXE, Vec3::YAXE, -iBasis));
+		}
+
+		for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+		{
+			indices.push_back(bottomCenterIndex);
+			indices.push_back(bottomCenterIndex + sliceIndex + 2);
+			indices.push_back(bottomCenterIndex + sliceIndex + 1);
+		}
+	}
+}
+
+void AddVertsForTaperedCylinder3D(std::vector<Vertex_PCU>& verts, Vec3 const& start, Vec3 const& end, float radiusStart, float radiusEnd, Rgba8 const& color, AABB2 const& UVs, int numSlices)
+{
+	UNUSED(UVs);
+
+	float sliceStep = 360.f / numSlices;
+
+	Vec3 iBasis = end - start;
+	iBasis.Normalize();
+
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+	jBasis.Normalize();
+
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis);
+	kBasis.Normalize();
+
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		float startDeg = sliceIndex * sliceStep;
+		float endDeg = (sliceIndex + 1) * sliceStep;
+
+		float uvLeft = RangeMap(startDeg, 0.f, 360.f, 0.f, 1.f);
+		float uvRight = RangeMap(endDeg, 0.f, 360.f, 0.f, 1.f);
+
+		// Direction vectors on the circle
+		Vec3 dirR = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+		Vec3 dirL = CosDegrees(endDeg) * jBasis + SinDegrees(endDeg) * kBasis;
+
+		Vec3 bR = start + dirR * radiusStart;
+		Vec3 bL = start + dirL * radiusStart;
+		Vec3 tR = end + dirR * radiusEnd;
+		Vec3 tL = end + dirL * radiusEnd;
+
+		Vec2 uv_tR_disc = GetDiscUV(tR, end, jBasis, kBasis, radiusEnd);
+		Vec2 uv_tL_disc = GetDiscUV(tL, end, jBasis, kBasis, radiusEnd);
+		Vec2 uv_center_top = Vec2::ONEHALF;
+
+		Vec2 uv_bR_disc = GetDiscUV(bR, start, jBasis, kBasis, radiusStart);
+		Vec2 uv_bL_disc = GetDiscUV(bL, start, jBasis, kBasis, radiusStart);
+		Vec2 uv_center_bottom = Vec2::ONEHALF;
+
+		AABB2 quadUVs = AABB2(uvLeft, 0.f, uvRight, 1.f);
+
+		// Top cap
+		verts.push_back(Vertex_PCU(tR, color, uv_tR_disc));
+		verts.push_back(Vertex_PCU(tL, color, uv_tL_disc));
+		verts.push_back(Vertex_PCU(end, color, uv_center_top));
+
+		// Side quad
+		AddVertsForQuad3D(verts, bR, bL, tL, tR, color, quadUVs);
+
+		// Bottom cap
+		verts.push_back(Vertex_PCU(bL, color, uv_bL_disc));
+		verts.push_back(Vertex_PCU(bR, color, uv_bR_disc));
+		verts.push_back(Vertex_PCU(start, color, uv_center_bottom));
 	}
 }
 
@@ -1165,4 +1543,833 @@ void AddVertsForCylinderOriented3D(std::vector<Vertex_PCUTBN>& vertexes, std::ve
 		indexes.push_back(base + 13);
 		indexes.push_back(base + 14);
     }
+}
+
+void AddVertsForConeTBN3D(std::vector<Vertex_PCUTBN>& vertexes, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color, AABB2 const& UVs, int numSlices, bool drawDisc)
+{
+	UNUSED(UVs);
+	const float sliceStep = 360.f / numSlices;
+	Vec3 coneBottom = start;
+	Vec3 coneTop = end;
+
+	Vec3 iBasis = end - start;
+	iBasis.Normalize();
+
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+	jBasis.Normalize();
+
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis);
+	kBasis.Normalize();
+
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		const float startDegree = sliceIndex * sliceStep;
+		const float endDegree = ((sliceIndex + 1) * sliceStep);
+		float uvLeft = RangeMap(startDegree, 0.f, 360.f, 0.f, 1.f);
+		float uvRight = RangeMap(endDegree, 0.f, 360.f, 0.f, 1.f);
+
+		Vec3 bR = ((CosDegrees(startDegree) * jBasis + SinDegrees(startDegree) * kBasis) * radius);
+		Vec3 bL = ((CosDegrees(endDegree) * jBasis + SinDegrees(endDegree) * kBasis) * radius);
+
+		// UVs
+		AABB2 quadUVs = AABB2(uvLeft, 0.f, uvRight, 1.f);
+		Vec2 uv_bR_disc = GetDiscUV(bR, start, jBasis, kBasis, radius);
+		Vec2 uv_bL_disc = GetDiscUV(bL, start, jBasis, kBasis, radius);
+		Vec2 uv_center_bottom = Vec2::ONEHALF;
+
+		// Cone quad
+		AddVertsForQuad3D(vertexes, bR + coneBottom, bL + coneBottom, coneTop, coneTop, color, quadUVs);
+
+		// Cone bottom disc
+		if (drawDisc)
+		{
+			vertexes.push_back(Vertex_PCUTBN(bL + coneBottom, color, uv_bL_disc, Vec3::ZERO, Vec3::ZERO, -iBasis));
+			vertexes.push_back(Vertex_PCUTBN(bR + coneBottom, color, uv_bR_disc, Vec3::ZERO, Vec3::ZERO, -iBasis));
+			vertexes.push_back(Vertex_PCUTBN(coneBottom, color, uv_center_bottom, Vec3::ZERO, Vec3::ZERO, -iBasis));
+		}
+	}
+}
+
+void AddVertsForIndexedCone3D(std::vector<Vertex_PCUTBN>& vertexes, std::vector<unsigned int>& indices, Vec3 const& start, Vec3 const& end, float radius, Rgba8 const& color, AABB2 const& UVs, int numSlices, bool drawDisc)
+{
+	UNUSED(UVs);
+
+	float sliceStep = 360.f / numSlices;
+
+	Vec3 iBasis = (end - start).GetNormalized();
+
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+	jBasis.Normalize();
+
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis).GetNormalized();
+
+	float height = (end - start).GetLength();
+	float slope  = radius / height;
+
+	unsigned int base = static_cast<unsigned int>(vertexes.size());
+
+	// Body
+	for (int sliceIndex = 0; sliceIndex <= numSlices; ++sliceIndex)
+	{
+		float startDeg = sliceIndex * sliceStep;
+		float u = static_cast<float>(sliceIndex) / numSlices;
+
+		Vec3 dir = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+		Vec3 position = start + dir * radius;
+		Vec3 normal = (dir - iBasis * slope).GetNormalized();
+		Vec3 tangent = CrossProduct3D(Vec3::ZAXE, normal).GetNormalized();
+		Vec3 bitangent = CrossProduct3D(normal, tangent);
+
+		vertexes.push_back(Vertex_PCUTBN(position, color, Vec2(u, 0.f), tangent, bitangent, normal));
+	}
+
+	unsigned int tipStart = static_cast<unsigned int>(vertexes.size());
+
+	// Pointy tip
+	for (int sliceIndex = 0; sliceIndex <= numSlices; ++sliceIndex)
+	{
+		float startDeg = sliceIndex * sliceStep;
+		Vec3 dir = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+
+		Vec3 normal = (dir - iBasis * slope).GetNormalized();
+
+		vertexes.push_back(Vertex_PCUTBN(end, color, Vec2(static_cast<float>(sliceIndex) / numSlices, 1.f), Vec3::ZERO, Vec3::ZERO, normal));
+	}
+
+	// Body indices
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		unsigned int b0 = base + sliceIndex;
+		unsigned int b1 = base + sliceIndex + 1;
+
+		unsigned int t0 = tipStart + sliceIndex;
+		unsigned int t1 = tipStart + sliceIndex + 1;
+
+		indices.push_back(b0);
+		indices.push_back(b1);
+		indices.push_back(t1);
+
+		indices.push_back(b0);
+		indices.push_back(t1);
+		indices.push_back(t0);
+	}
+
+	// Cone Disc
+	if (drawDisc)
+	{
+		unsigned int centerIndex = static_cast<unsigned int>(vertexes.size());
+		vertexes.push_back(Vertex_PCUTBN(start, color, Vec2::ONEHALF, Vec3::XAXE, Vec3::YAXE, -iBasis));
+
+		for (int sliceIndex = 0; sliceIndex <= numSlices; ++sliceIndex)
+		{
+			float startDeg = sliceIndex * sliceStep;
+			Vec3 dir = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+
+			Vec3 position = start + dir * radius;
+			Vec2 uv = GetDiscUV(position, start, jBasis, kBasis, radius);
+
+			vertexes.push_back(Vertex_PCUTBN(position, color, uv, Vec3::XAXE, Vec3::YAXE, -iBasis));
+		}
+
+		for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+		{
+			indices.push_back(centerIndex);
+			indices.push_back(centerIndex + sliceIndex + 2);
+			indices.push_back(centerIndex + sliceIndex + 1);
+		}
+	}
+}
+
+float SmoothBoneWeights(Vec3 const& pos, Vec3 const& startPos, Vec3 const& boneDirNormalized, float boneLength)
+{
+	float smoothWeighting = DotProduct3D(pos - startPos, boneDirNormalized) / boneLength;
+	return GetClamped(smoothWeighting, 0.f, 1.f);
+}
+
+void AddSkinnedVertsForQuad3D(std::vector<Vertex_PCUTBNSkinned>& verts, Vec3 const& bottomLeft, Vec3 const& bottomRight, Vec3 const& topRight, Vec3 const& topLeft, int boneIndex, Rgba8 const& color, AABB2 const& UVs)
+{
+	Vec3 bottomLeftNormal = CrossProduct3D(bottomRight - bottomLeft, topLeft - bottomLeft).GetNormalized();
+	Vec3 bottomRightNormal = CrossProduct3D(topRight - bottomRight, bottomLeft - bottomRight).GetNormalized();
+	Vec3 topRightNormal = CrossProduct3D(topLeft - topRight, bottomRight - topRight).GetNormalized();
+	Vec3 topLeftNormal = CrossProduct3D(bottomLeft - topLeft, topRight - topLeft).GetNormalized();
+
+	Vec3 edge1 = bottomRight - bottomLeft;
+	Vec3 edge2 = topLeft - bottomLeft;
+	Vec3 fullNormal = CrossProduct3D(edge1, edge2).GetNormalized();
+
+	// Calculate UVs
+	Vec2 uv_bL = UVs.m_mins;
+	Vec2 uv_bR = Vec2(UVs.m_maxs.x, UVs.m_mins.y);
+	Vec2 uv_tL = Vec2(UVs.m_mins.x, UVs.m_maxs.y);
+	Vec2 uv_tR = UVs.m_maxs;
+	Vec2 rightUV = uv_bR - uv_bL;
+	Vec2 upUV = uv_tL - uv_bL;
+
+	// Calculate tangent and bitangent
+	Vec3 tangent = Vec3::ZERO;
+	Vec3 biTangent = Vec3::ZERO;
+	if (fullNormal == Vec3::ZAXE)
+	{
+		tangent = Vec3::XAXE;
+		biTangent = Vec3::YAXE;
+	}
+	else if (fullNormal == -Vec3::ZAXE)
+	{
+		tangent = -Vec3::XAXE;
+		biTangent = -Vec3::YAXE;
+	}
+	else
+	{
+		tangent = ((edge1 * upUV.y - edge2 * rightUV.y)).GetNormalized();
+		biTangent = ((edge2 * rightUV.x - edge1 * upUV.x)).GetNormalized();
+	}
+
+	Vec4 boneWeights = Vec4(1.f, 0.f, 0.f, 0.f);
+	IntVec4 boneIndices = IntVec4(boneIndex, 0, 0, 0);
+
+	// First triangle
+	verts.push_back(Vertex_PCUTBNSkinned(bottomLeft, color, UVs.m_mins, tangent, biTangent, bottomLeftNormal, boneWeights, boneIndices));
+	verts.push_back(Vertex_PCUTBNSkinned(bottomRight, color, Vec2(UVs.m_maxs.x, UVs.m_mins.y), tangent, biTangent, bottomRightNormal, boneWeights, boneIndices));
+	verts.push_back(Vertex_PCUTBNSkinned(topRight, color, UVs.m_maxs, tangent, biTangent, topRightNormal, boneWeights, boneIndices));
+
+	// Second triangle
+	verts.push_back(Vertex_PCUTBNSkinned(bottomLeft, color, UVs.m_mins, tangent, biTangent, bottomLeftNormal, boneWeights, boneIndices));
+	verts.push_back(Vertex_PCUTBNSkinned(topRight, color, UVs.m_maxs, tangent, biTangent, topRightNormal, boneWeights, boneIndices));
+	verts.push_back(Vertex_PCUTBNSkinned(topLeft, color, Vec2(UVs.m_mins.x, UVs.m_maxs.y), tangent, biTangent, topLeftNormal, boneWeights, boneIndices));
+}
+
+void AddSkinnedVertsForQuad3D_Blended(std::vector<Vertex_PCUTBNSkinned>& verts, Vec3 const& bottomLeft, Vec3 const& bottomRight, Vec3 const& topRight, Vec3 const& topLeft, int parentBoneIndex, int childBoneIndex, Vec3 const& startPos, Vec3 const& boneDirNormalized, float boneLength, Rgba8 const& color, AABB2 const& UVs)
+{
+	Vec3 edge1 = bottomRight - bottomLeft;
+	Vec3 edge2 = topLeft - bottomLeft;
+	Vec3 fullNormal = CrossProduct3D(edge1, edge2).GetNormalized();
+
+	Vec2 uv_bL = UVs.m_mins;
+	Vec2 uv_bR = Vec2(UVs.m_maxs.x, UVs.m_mins.y);
+	Vec2 uv_tL = Vec2(UVs.m_mins.x, UVs.m_maxs.y);
+	Vec2 uv_tR = UVs.m_maxs;
+
+	Vec2 rightUV = uv_bR - uv_bL;
+	Vec2 upUV = uv_tL - uv_bL;
+
+	Vec3 tangent = ((edge1 * upUV.y - edge2 * rightUV.y)).GetNormalized();
+	Vec3 bitangent = ((edge2 * rightUV.x - edge1 * upUV.x)).GetNormalized();
+
+	Vec3 nBL = CrossProduct3D(bottomRight - bottomLeft, topLeft - bottomLeft).GetNormalized();
+	Vec3 nBR = CrossProduct3D(topRight - bottomRight, bottomLeft - bottomRight).GetNormalized();
+	Vec3 nTR = CrossProduct3D(topLeft - topRight, bottomRight - topRight).GetNormalized();
+	Vec3 nTL = CrossProduct3D(bottomLeft - topLeft, topRight - topLeft).GetNormalized();
+
+	// Triangle 1
+	{
+		float smoothWeighting = SmoothBoneWeights(bottomLeft, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(bottomLeft, color, uv_bL, tangent, bitangent, nBL, boneWeights, boneIndices));
+	}
+	{
+		float smoothWeighting = SmoothBoneWeights(bottomRight, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(bottomRight, color, uv_bR, tangent, bitangent, nBR, boneWeights, boneIndices));
+	}
+	{
+		float smoothWeighting = SmoothBoneWeights(topRight, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(topRight, color, uv_tR, tangent, bitangent, nTR, boneWeights, boneIndices));
+	}
+
+	// Triangle 2
+	{
+		float smoothWeighting = SmoothBoneWeights(bottomLeft, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(bottomLeft, color, uv_bL, tangent, bitangent, nBL, boneWeights, boneIndices));
+	}
+	{
+		float smoothWeighting = SmoothBoneWeights(topRight, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(topRight, color, uv_tR, tangent, bitangent, nTR, boneWeights, boneIndices));
+	}
+	{
+		float smoothWeighting = SmoothBoneWeights(topLeft, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(topLeft, color, uv_tL, tangent, bitangent, nTL, boneWeights, boneIndices));
+	}
+}
+
+void AddSkinnedVertsForIndexedQuad3D_Blended(std::vector<Vertex_PCUTBNSkinned>& verts, std::vector<unsigned int>& indices, Vec3 const& bottomLeft, Vec3 const& bottomRight, Vec3 const& topRight, Vec3 const& topLeft, int parentBoneIndex, int childBoneIndex, Vec3 const& startPos, Vec3 const& boneDirNormalized, float boneLength, Rgba8 const& color, AABB2 const& UVs)
+{
+	unsigned int index = static_cast<unsigned int>(verts.size());
+	indices.push_back(index);
+	indices.push_back(index + 1);
+	indices.push_back(index + 2);
+	indices.push_back(index);
+	indices.push_back(index + 2);
+	indices.push_back(index + 3);
+
+	Vec3 edge1 = bottomRight - bottomLeft;
+	Vec3 edge2 = topLeft - bottomLeft;
+	Vec3 fullNormal = CrossProduct3D(edge1, edge2).GetNormalized();
+
+	Vec2 uv_bL = UVs.m_mins;
+	Vec2 uv_bR = Vec2(UVs.m_maxs.x, UVs.m_mins.y);
+	Vec2 uv_tL = Vec2(UVs.m_mins.x, UVs.m_maxs.y);
+	Vec2 uv_tR = UVs.m_maxs;
+
+	Vec2 rightUV = uv_bR - uv_bL;
+	Vec2 upUV = uv_tL - uv_bL;
+
+	Vec3 tangent = ((edge1 * upUV.y - edge2 * rightUV.y)).GetNormalized();
+	Vec3 bitangent = ((edge2 * rightUV.x - edge1 * upUV.x)).GetNormalized();
+
+	Vec3 nBL = CrossProduct3D(bottomRight - bottomLeft, topLeft - bottomLeft).GetNormalized();
+	Vec3 nBR = CrossProduct3D(topRight - bottomRight, bottomLeft - bottomRight).GetNormalized();
+	Vec3 nTR = CrossProduct3D(topLeft - topRight, bottomRight - topRight).GetNormalized();
+	Vec3 nTL = CrossProduct3D(bottomLeft - topLeft, topRight - topLeft).GetNormalized();
+
+	// Indexed Quad
+	{
+		float smoothWeighting = SmoothBoneWeights(bottomLeft, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(bottomLeft, color, uv_bL, tangent, bitangent, nBL, boneWeights, boneIndices));
+	}
+	{
+		float smoothWeighting = SmoothBoneWeights(bottomRight, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(bottomRight, color, uv_bR, tangent, bitangent, nBR, boneWeights, boneIndices));
+	}
+	{
+		float smoothWeighting = SmoothBoneWeights(topRight, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(topRight, color, uv_tR, tangent, bitangent, nTR, boneWeights, boneIndices));
+	}
+	{
+		float smoothWeighting = SmoothBoneWeights(topLeft, startPos, boneDirNormalized, boneLength);
+		Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+		verts.push_back(Vertex_PCUTBNSkinned(topLeft, color, uv_tL, tangent, bitangent, nTL, boneWeights, boneIndices));
+	}
+}
+
+void AddSkinnedVertsForSphere(std::vector<Vertex_PCUTBNSkinned>& vertexes, float radius, int boneIndex, Vec3 const& boneBindPosition, Rgba8 const& color, AABB2 const& UVs, int numSlices, int numStacks)
+{
+	float stackStep = 180.f / numStacks;
+	float sliceStep = 360.f / numSlices;
+
+	float uvStepX = UVs.GetDimensions().x / numSlices;
+	float uvStepY = UVs.GetDimensions().y / numStacks;
+
+	for (int stackIndex = 0; stackIndex < numStacks; ++stackIndex)
+	{
+		for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+		{
+			float pitchDegrees = 90.f - stackIndex * stackStep;
+			float yawDegrees = sliceIndex * sliceStep;
+
+			Vec3 bL = boneBindPosition + Vec3::MakeFromPolarDegrees(pitchDegrees, yawDegrees, radius);
+			Vec3 bR = boneBindPosition + Vec3::MakeFromPolarDegrees(pitchDegrees, yawDegrees + sliceStep, radius);
+			Vec3 tL = boneBindPosition + Vec3::MakeFromPolarDegrees(pitchDegrees - stackStep, yawDegrees, radius);
+			Vec3 tR = boneBindPosition + Vec3::MakeFromPolarDegrees(pitchDegrees - stackStep, yawDegrees + sliceStep, radius);
+			Vec3 edge1 = bR - bL;
+			Vec3 edge2 = tL - bL;
+
+			// Calculate normals
+			Vec3 normal_bL = (bL - boneBindPosition).GetNormalized();
+			Vec3 normal_bR = (bR - boneBindPosition).GetNormalized();
+			Vec3 normal_tL = (tL - boneBindPosition).GetNormalized();
+			Vec3 normal_tR = (tR - boneBindPosition).GetNormalized();
+
+			// Calculate UVs
+			AABB2 quadUVs = AABB2(sliceIndex * uvStepX, stackIndex * uvStepY, (sliceIndex + 1) * uvStepX, (stackIndex + 1) * uvStepY);
+			Vec2 uv_bL = quadUVs.m_mins;
+			Vec2 uv_bR = Vec2(quadUVs.m_maxs.x, quadUVs.m_mins.y);
+			Vec2 uv_tL = Vec2(quadUVs.m_mins.x, quadUVs.m_maxs.y);
+			Vec2 uv_tR = quadUVs.m_maxs;
+			Vec2 rightUV = uv_bR - uv_bL;
+			Vec2 upUV = uv_tL - uv_bL;
+
+			// Calculate tangent
+			Vec3 tangent = (edge1 * upUV.y - edge2 * rightUV.y).GetNormalized();
+
+			// Calculate bitangent
+			Vec3 bitangent = (edge2 * rightUV.x - edge1 * upUV.x).GetNormalized();
+
+			IntVec4 boneIndices = IntVec4(boneIndex, 0, 0, 0);
+			Vec4 boneWeights = Vec4(1.f, 0.f, 0.f, 0.f);
+
+			// First triangle
+			vertexes.push_back(Vertex_PCUTBNSkinned(bL, color, uv_bL, tangent, bitangent, normal_bL, boneWeights, boneIndices));
+			vertexes.push_back(Vertex_PCUTBNSkinned(bR, color, uv_bR, tangent, bitangent, normal_bR, boneWeights, boneIndices));
+			vertexes.push_back(Vertex_PCUTBNSkinned(tR, color, uv_tR, tangent, bitangent, normal_tR, boneWeights, boneIndices));
+
+			// Second triangle
+			vertexes.push_back(Vertex_PCUTBNSkinned(bL, color, uv_bL, tangent, bitangent, normal_bL, boneWeights, boneIndices));
+			vertexes.push_back(Vertex_PCUTBNSkinned(tR, color, uv_tR, tangent, bitangent, normal_tR, boneWeights, boneIndices));
+			vertexes.push_back(Vertex_PCUTBNSkinned(tL, color, uv_tL, tangent, bitangent, normal_tL, boneWeights, boneIndices));
+		}
+	}
+}
+
+void AddSkinnedVertsForIndexedSphere(std::vector<Vertex_PCUTBNSkinned>& vertexes, std::vector<unsigned int>& indices, float radius, int boneIndex, Vec3 const& boneBindPosition, Rgba8 const& color, AABB2 const& UVs, int numSlices, int numStacks)
+{
+	float stackStep = 180.f / numStacks;
+	float sliceStep = 360.f / numSlices;
+
+	float uvStepX = UVs.GetDimensions().x / numSlices;
+	float uvStepY = UVs.GetDimensions().y / numStacks;
+
+	for (int stackIndex = 0; stackIndex < numStacks; ++stackIndex)
+	{
+		for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+		{
+			float pitchDegrees = 90.f - stackIndex * stackStep;
+			float yawDegrees = sliceIndex * sliceStep;
+
+			Vec3 bL = boneBindPosition + Vec3::MakeFromPolarDegrees(pitchDegrees, yawDegrees, radius);
+			Vec3 bR = boneBindPosition + Vec3::MakeFromPolarDegrees(pitchDegrees, yawDegrees + sliceStep, radius);
+			Vec3 tL = boneBindPosition + Vec3::MakeFromPolarDegrees(pitchDegrees - stackStep, yawDegrees, radius);
+			Vec3 tR = boneBindPosition + Vec3::MakeFromPolarDegrees(pitchDegrees - stackStep, yawDegrees + sliceStep, radius);
+			Vec3 edge1 = bR - bL;
+			Vec3 edge2 = tL - bL;
+
+			// Calculate normals
+			Vec3 normal_bL = (bL - boneBindPosition).GetNormalized();
+			Vec3 normal_bR = (bR - boneBindPosition).GetNormalized();
+			Vec3 normal_tL = (tL - boneBindPosition).GetNormalized();
+			Vec3 normal_tR = (tR - boneBindPosition).GetNormalized();
+
+			// Calculate UVs
+			AABB2 quadUVs = AABB2(sliceIndex * uvStepX, stackIndex * uvStepY, (sliceIndex + 1) * uvStepX, (stackIndex + 1) * uvStepY);
+			Vec2 uv_bL = quadUVs.m_mins;
+			Vec2 uv_bR = Vec2(quadUVs.m_maxs.x, quadUVs.m_mins.y);
+			Vec2 uv_tL = Vec2(quadUVs.m_mins.x, quadUVs.m_maxs.y);
+			Vec2 uv_tR = quadUVs.m_maxs;
+			Vec2 rightUV = uv_bR - uv_bL;
+			Vec2 upUV = uv_tL - uv_bL;
+
+			// Calculate tangent
+			Vec3 tangent = (edge1 * upUV.y - edge2 * rightUV.y).GetNormalized();
+
+			// Calculate bitangent
+			Vec3 bitangent = (edge2 * rightUV.x - edge1 * upUV.x).GetNormalized();
+
+			IntVec4 boneIndices = IntVec4(boneIndex, 0, 0, 0);
+			Vec4 boneWeights = Vec4(1.f, 0.f, 0.f, 0.f);
+
+			// First triangle
+			vertexes.push_back(Vertex_PCUTBNSkinned(bL, color, uv_bL, tangent, bitangent, normal_bL, boneWeights, boneIndices));
+			vertexes.push_back(Vertex_PCUTBNSkinned(bR, color, uv_bR, tangent, bitangent, normal_bR, boneWeights, boneIndices));
+			vertexes.push_back(Vertex_PCUTBNSkinned(tR, color, uv_tR, tangent, bitangent, normal_tR, boneWeights, boneIndices));
+			vertexes.push_back(Vertex_PCUTBNSkinned(tL, color, uv_tL, tangent, bitangent, normal_tL, boneWeights, boneIndices));
+
+			unsigned int index = static_cast<unsigned int>(vertexes.size());
+			indices.push_back(index);
+			indices.push_back(index + 1);
+			indices.push_back(index + 2);
+			indices.push_back(index);
+			indices.push_back(index + 2);
+			indices.push_back(index + 3);
+		}
+	}
+}
+
+void AddSkinnedVertsForCylinder(std::vector<Vertex_PCUTBNSkinned>& vertexes, Vec3 const& startPos, Vec3 const& endPos, float radius, int boneIndex, Rgba8 const& color, int numSlices)
+{
+	float sliceStep = 360.f / numSlices;
+
+	Vec3 iBasis = (endPos - startPos).GetNormalized();
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+
+	jBasis.Normalize();
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis);
+	kBasis.Normalize();
+
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		float startDegree = sliceIndex * sliceStep;
+		float endDegree = (sliceIndex + 1) * sliceStep;
+		float uvLeft = RangeMap(startDegree, 0.f, 360.f, 0.f, 1.f);
+		float uvRight = RangeMap(endDegree, 0.f, 360.f, 0.f, 1.f);
+
+		Vec3 offsetBR = ((CosDegrees(startDegree) * jBasis + SinDegrees(startDegree) * kBasis) * radius);
+		Vec3 offsetBL = ((CosDegrees(endDegree) * jBasis + SinDegrees(endDegree) * kBasis) * radius);
+
+		Vec3 bL = startPos + offsetBL;
+		Vec3 bR = startPos + offsetBR;
+		Vec3 tL = endPos + offsetBL;
+		Vec3 tR = endPos + offsetBR;
+
+		Vec3 normal_bL = bL.GetNormalized();
+		Vec3 normal_bR = bR.GetNormalized();
+		Vec3 normal_tL = tL.GetNormalized();
+		Vec3 normal_tR = tR.GetNormalized();
+
+		// UVs
+		Vec2 uv_tR_disc = GetDiscUV(tR, endPos, jBasis, kBasis, radius);
+		Vec2 uv_tL_disc = GetDiscUV(tL, endPos, jBasis, kBasis, radius);
+		Vec2 uv_center_top = Vec2::ONEHALF;
+		AABB2 quadUVs = AABB2(uvLeft, 0.f, uvRight, 1.f);
+		Vec2 uv_bR_disc = GetDiscUV(bR, startPos, jBasis, kBasis, radius);
+		Vec2 uv_bL_disc = GetDiscUV(bL, startPos, jBasis, kBasis, radius);
+		Vec2 uv_center_bottom = Vec2::ONEHALF;
+
+		Vec2 uv_bL = Vec2(quadUVs.m_mins.x, quadUVs.m_mins.y);
+		Vec2 uv_bR = Vec2(quadUVs.m_maxs.x, quadUVs.m_mins.y);
+		Vec2 uv_tL = Vec2(quadUVs.m_mins.x, quadUVs.m_maxs.y);
+		Vec2 uv_tR = Vec2(quadUVs.m_maxs.x, quadUVs.m_maxs.y);
+
+		Vec3 edge1 = bR - bL;
+		Vec3 edge2 = tL - bL;
+		Vec2 rightUV = uv_bR - uv_bL;
+		Vec2 upUV = uv_tL - uv_bL;
+
+		Vec3 tangent = (edge1 * upUV.y - edge2 * rightUV.y).GetNormalized();
+		Vec3 bitangent = (edge2 * rightUV.x - edge1 * upUV.x).GetNormalized();
+
+		Vec4 boneWeights = Vec4(1.f, 0.f, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(boneIndex, 0, 0, 0);
+
+		// Top disc
+		vertexes.push_back(Vertex_PCUTBNSkinned(tR, color, uv_tR_disc, tangent, bitangent, iBasis, boneWeights, boneIndices));
+		vertexes.push_back(Vertex_PCUTBNSkinned(tL, color, uv_tL_disc, tangent, bitangent, iBasis, boneWeights, boneIndices));
+		vertexes.push_back(Vertex_PCUTBNSkinned(endPos, color, uv_center_top, tangent, bitangent, iBasis, boneWeights, boneIndices));
+
+		// Cylinder body
+		AddSkinnedVertsForQuad3D(vertexes, bR, bL, tL, tR, boneIndex, color, quadUVs);
+
+		// Bottom disc
+		vertexes.push_back(Vertex_PCUTBNSkinned(bL, color, uv_bL_disc, tangent, bitangent, -iBasis, boneWeights, boneIndices));
+		vertexes.push_back(Vertex_PCUTBNSkinned(bR, color, uv_bR_disc, tangent, bitangent, -iBasis, boneWeights, boneIndices));
+		vertexes.push_back(Vertex_PCUTBNSkinned(startPos, color, uv_center_bottom, tangent, bitangent, -iBasis, boneWeights, boneIndices));
+	}
+}
+
+void AddSkinnedVertsForCylinder_Blended(std::vector<Vertex_PCUTBNSkinned>& vertexes, Vec3 const& startPos, Vec3 const& endPos, float radius, int parentBoneIndex, int childBoneIndex, Rgba8 const& color, int numSlices)
+{
+	float sliceStep = 360.f / numSlices;
+
+	Vec3 boneDir = endPos - startPos;
+	float boneLength = boneDir.GetLength();
+	Vec3 boneDirNormalized = boneDir / boneLength;
+
+	Vec3 iBasis = boneDirNormalized;
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+
+	jBasis.Normalize();
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis);
+	kBasis.Normalize();
+
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		float startDegree = sliceIndex * sliceStep;
+		float endDegree = (sliceIndex + 1) * sliceStep;
+
+		float uvLeft = RangeMap(startDegree, 0.f, 360.f, 0.f, 1.f);
+		float uvRight = RangeMap(endDegree, 0.f, 360.f, 0.f, 1.f);
+
+		Vec3 offsetBR = ((CosDegrees(startDegree) * jBasis + SinDegrees(startDegree) * kBasis) * radius);
+		Vec3 offsetBL = ((CosDegrees(endDegree) * jBasis + SinDegrees(endDegree) * kBasis) * radius);
+
+		Vec3 bL = startPos + offsetBL;
+		Vec3 bR = startPos + offsetBR;
+		Vec3 tL = endPos + offsetBL;
+		Vec3 tR = endPos + offsetBR;
+
+		Vec3 normal_bL = (bL - startPos).GetNormalized();
+		Vec3 normal_bR = (bR - startPos).GetNormalized();
+		Vec3 normal_tL = (tL - endPos).GetNormalized();
+		Vec3 normal_tR = (tR - endPos).GetNormalized();
+
+		// UVs
+		Vec2 uv_tR_disc = GetDiscUV(tR, endPos, jBasis, kBasis, radius);
+		Vec2 uv_tL_disc = GetDiscUV(tL, endPos, jBasis, kBasis, radius);
+		Vec2 uv_center_top = Vec2::ONEHALF;
+
+		AABB2 quadUVs = AABB2(uvLeft, 0.f, uvRight, 1.f);
+
+		Vec2 uv_bR_disc = GetDiscUV(bR, startPos, jBasis, kBasis, radius);
+		Vec2 uv_bL_disc = GetDiscUV(bL, startPos, jBasis, kBasis, radius);
+		Vec2 uv_center_bottom = Vec2::ONEHALF;
+
+		Vec3 edge1 = bR - bL;
+		Vec3 edge2 = tL - bL;
+		Vec2 rightUV = Vec2(quadUVs.m_maxs.x, quadUVs.m_mins.y) - Vec2(quadUVs.m_mins.x, quadUVs.m_mins.y);
+		Vec2 upUV = Vec2(quadUVs.m_mins.x, quadUVs.m_maxs.y) - Vec2(quadUVs.m_mins.x, quadUVs.m_mins.y);
+
+		Vec3 tangent = (edge1 * upUV.y - edge2 * rightUV.y).GetNormalized();
+		Vec3 bitangent = (edge2 * rightUV.x - edge1 * upUV.x).GetNormalized();
+
+		// Top disc
+		{
+			float smoothWeighting = SmoothBoneWeights(tR, startPos, boneDirNormalized, boneLength);
+			Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+			IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+			vertexes.push_back(Vertex_PCUTBNSkinned(tR, color, uv_tR_disc, tangent, bitangent, normal_tR, boneWeights, boneIndices));
+		}
+		{
+			float smoothWeighting = SmoothBoneWeights(tL, startPos, boneDirNormalized, boneLength);
+			Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+			IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+			vertexes.push_back(Vertex_PCUTBNSkinned(tL, color, uv_tL_disc, tangent, bitangent, normal_tL, boneWeights, boneIndices));
+		}
+		{
+			float smoothWeighting = SmoothBoneWeights(endPos, startPos, boneDirNormalized, boneLength);
+			Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+			IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+			vertexes.push_back(Vertex_PCUTBNSkinned(endPos, color, uv_center_top, tangent, bitangent, iBasis, boneWeights, boneIndices));
+		}
+
+		// Cylinder body
+		AddSkinnedVertsForQuad3D_Blended(vertexes, bR, bL, tL, tR, parentBoneIndex, childBoneIndex, startPos, boneDirNormalized, boneLength, color, quadUVs);
+
+		// Bottom disc
+		{
+			float smoothWeighting = SmoothBoneWeights(bL, startPos, boneDirNormalized, boneLength);
+			Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+			IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+			vertexes.push_back(Vertex_PCUTBNSkinned(bL, color, uv_bL_disc, tangent, bitangent, normal_bL, boneWeights, boneIndices));
+		}
+		{
+			float smoothWeighting = SmoothBoneWeights(bR, startPos, boneDirNormalized, boneLength);
+			Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+			IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+			vertexes.push_back(Vertex_PCUTBNSkinned(bR, color, uv_bR_disc, tangent, bitangent, normal_bR, boneWeights, boneIndices));
+		}
+		{
+			float smoothWeighting = SmoothBoneWeights(startPos, startPos, boneDirNormalized, boneLength);
+			Vec4 boneWeights = Vec4(1.f - smoothWeighting, smoothWeighting, 0.f, 0.f);
+			IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+			vertexes.push_back(Vertex_PCUTBNSkinned(startPos, color, uv_center_bottom, tangent, bitangent, -iBasis, boneWeights, boneIndices));
+		}
+	}
+}
+
+void AddSkinnedVertsForIndexedCylinder_Blended(std::vector<Vertex_PCUTBNSkinned>& vertexes, std::vector<unsigned int>& indices, Vec3 const& startPos, Vec3 const& endPos, float radius, int parentBoneIndex, int childBoneIndex, Rgba8 const& color, int numSlices)
+{
+	float sliceStep = 360.f / numSlices;
+
+	Vec3 boneDir = endPos - startPos;
+	float boneLength = boneDir.GetLength();
+	Vec3 iBasis = boneDir.GetNormalized();
+
+	Vec3 arbitrary = (fabsf(iBasis.z) < 0.999f) ? Vec3::ZAXE : Vec3::YAXE;
+	Vec3 jBasis = CrossProduct3D(arbitrary, iBasis).GetNormalized();
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis);
+
+	unsigned int baseIndex = static_cast<unsigned int>(vertexes.size());
+
+
+	for (int slice = 0; slice <= numSlices; ++slice)
+	{
+		float degrees = slice * sliceStep;
+
+		float cosTheta = CosDegrees(degrees);
+		float sinTheta = SinDegrees(degrees);
+
+		Vec3 radial = cosTheta * jBasis + sinTheta * kBasis;
+		Vec3 normal = radial;
+
+		Vec3 bottom = startPos + radial * radius;
+		Vec3 top = endPos + radial * radius;
+
+		float u = static_cast<float>(slice) / static_cast<float>(numSlices);
+
+		Vec2 uvBottom = Vec2(u, 0.f);
+		Vec2 uvTop = Vec2(u, 1.f);
+
+		Vec3 tangent = CrossProduct3D(Vec3::ZAXE, normal);
+		if (tangent.GetLengthSquared() < 0.001f)
+		{
+			tangent = CrossProduct3D(Vec3::YAXE, normal);
+		}
+		tangent.Normalize();
+
+		Vec3 bitangent = CrossProduct3D(normal, tangent);
+
+		// Skinning weights
+		float wBottom = SmoothBoneWeights(bottom, startPos, iBasis, boneLength);
+		float wTop = SmoothBoneWeights(top, startPos, iBasis, boneLength);
+
+		Vec4 weightsBottom = Vec4(1.f - wBottom, wBottom, 0.f, 0.f);
+		Vec4 weightsTop = Vec4(1.f - wTop, wTop, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(parentBoneIndex, childBoneIndex, 0, 0);
+
+		// Bottom vertex
+		vertexes.push_back(Vertex_PCUTBNSkinned(bottom, color, uvBottom, tangent, bitangent, normal, weightsBottom, boneIndices));
+
+		// Top vertex
+		vertexes.push_back(Vertex_PCUTBNSkinned(top, color, uvTop, tangent, bitangent, normal, weightsTop, boneIndices));
+	}
+
+	for (int slice = 0; slice < numSlices; ++slice)
+	{
+		unsigned int i0 = baseIndex + slice * 2;
+		unsigned int i1 = i0 + 1;
+		unsigned int i2 = i0 + 2;
+		unsigned int i3 = i0 + 3;
+
+		// Triangle 1
+		indices.push_back(i0);
+		indices.push_back(i2);
+		indices.push_back(i3);
+
+		// Triangle 2
+		indices.push_back(i0);
+		indices.push_back(i3);
+		indices.push_back(i1);
+	}
+}
+
+void AddSkinnedVertsForTaperedCylinder(std::vector<Vertex_PCUTBNSkinned>& verts, Vec3 const& start, Vec3 const& end, float radiusStart, float radiusEnd, int boneIndex, Rgba8 const& color, int numSlices)
+{
+	float sliceStep = 360.f / numSlices;
+
+	Vec3 iBasis = end - start;
+	iBasis.Normalize();
+
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+	jBasis.Normalize();
+
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis);
+	kBasis.Normalize();
+
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		float startDeg = sliceIndex * sliceStep;
+		float endDeg = (sliceIndex + 1) * sliceStep;
+
+		float uvLeft = RangeMap(startDeg, 0.f, 360.f, 0.f, 1.f);
+		float uvRight = RangeMap(endDeg, 0.f, 360.f, 0.f, 1.f);
+
+		// Direction vectors on the circle
+		Vec3 dirR = CosDegrees(startDeg) * jBasis + SinDegrees(startDeg) * kBasis;
+		Vec3 dirL = CosDegrees(endDeg) * jBasis + SinDegrees(endDeg) * kBasis;
+
+		Vec3 bR = start + dirR * radiusStart;
+		Vec3 bL = start + dirL * radiusStart;
+		Vec3 tR = end + dirR * radiusEnd;
+		Vec3 tL = end + dirL * radiusEnd;
+
+		Vec3 normal_bL = bL.GetNormalized();
+		Vec3 normal_bR = bR.GetNormalized();
+		Vec3 normal_tL = tL.GetNormalized();
+		Vec3 normal_tR = tR.GetNormalized();
+
+		// UVs
+		Vec2 uv_tR_disc = GetDiscUV(tR, end, jBasis, kBasis, radiusEnd);
+		Vec2 uv_tL_disc = GetDiscUV(tL, end, jBasis, kBasis, radiusEnd);
+		Vec2 uv_center_top = Vec2::ONEHALF;
+		AABB2 quadUVs = AABB2(uvLeft, 0.f, uvRight, 1.f);
+		Vec2 uv_bR_disc = GetDiscUV(bR, start, jBasis, kBasis, radiusStart);
+		Vec2 uv_bL_disc = GetDiscUV(bL, start, jBasis, kBasis, radiusStart);
+		Vec2 uv_center_bottom = Vec2::ONEHALF;
+
+		Vec2 uv_bL = Vec2(quadUVs.m_mins.x, quadUVs.m_mins.y);
+		Vec2 uv_bR = Vec2(quadUVs.m_maxs.x, quadUVs.m_mins.y);
+		Vec2 uv_tL = Vec2(quadUVs.m_mins.x, quadUVs.m_maxs.y);
+		Vec2 uv_tR = Vec2(quadUVs.m_maxs.x, quadUVs.m_maxs.y);
+
+		Vec3 edge1 = bR - bL;
+		Vec3 edge2 = tL - bL;
+		Vec2 rightUV = uv_bR - uv_bL;
+		Vec2 upUV = uv_tL - uv_bL;
+
+		Vec3 tangent = (edge1 * upUV.y - edge2 * rightUV.y).GetNormalized();
+		Vec3 bitangent = (edge2 * rightUV.x - edge1 * upUV.x).GetNormalized();
+
+		Vec4 boneWeights = Vec4(1.f, 0.f, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(boneIndex, 0, 0, 0);
+
+		// Top disc
+		verts.push_back(Vertex_PCUTBNSkinned(tR, color, uv_tR_disc, tangent, bitangent, iBasis, boneWeights, boneIndices));
+		verts.push_back(Vertex_PCUTBNSkinned(tL, color, uv_tL_disc, tangent, bitangent, iBasis, boneWeights, boneIndices));
+		verts.push_back(Vertex_PCUTBNSkinned(end, color, uv_center_top, tangent, bitangent, iBasis, boneWeights, boneIndices));
+
+		// Side quad
+		AddSkinnedVertsForQuad3D(verts, bR, bL, tL, tR, boneIndex, color, quadUVs);
+
+		// Bottom disc
+		verts.push_back(Vertex_PCUTBNSkinned(bL, color, uv_bL_disc, tangent, bitangent, -iBasis, boneWeights, boneIndices));
+		verts.push_back(Vertex_PCUTBNSkinned(bR, color, uv_bR_disc, tangent, bitangent, -iBasis, boneWeights, boneIndices));
+		verts.push_back(Vertex_PCUTBNSkinned(start, color, uv_center_bottom, tangent, bitangent, -iBasis, boneWeights, boneIndices));
+	}
+}
+
+void AddSkinnedVertsForCone(std::vector<Vertex_PCUTBNSkinned>& vertexes, Vec3 const& start, Vec3 const& end, float radius, int boneIndex, Rgba8 const& color, AABB2 const& UVs, int numSlices)
+{
+	UNUSED(UVs);
+	const float sliceStep = 360.f / numSlices;
+	Vec3 coneBottom = start;
+	Vec3 coneTop = end;
+
+	Vec3 iBasis = end - start;
+	iBasis.Normalize();
+
+	Vec3 jBasis = CrossProduct3D(iBasis, Vec3::ZAXE);
+	if (jBasis.GetLengthSquared() < 0.01f)
+	{
+		jBasis = CrossProduct3D(iBasis, Vec3::YAXE);
+	}
+	jBasis.Normalize();
+
+	Vec3 kBasis = CrossProduct3D(iBasis, jBasis);
+	kBasis.Normalize();
+
+	for (int sliceIndex = 0; sliceIndex < numSlices; ++sliceIndex)
+	{
+		const float startDegree = sliceIndex * sliceStep;
+		const float endDegree = ((sliceIndex + 1) * sliceStep);
+		float uvLeft = RangeMap(startDegree, 0.f, 360.f, 0.f, 1.f);
+		float uvRight = RangeMap(endDegree, 0.f, 360.f, 0.f, 1.f);
+
+		Vec3 bR = ((CosDegrees(startDegree) * jBasis + SinDegrees(startDegree) * kBasis) * radius);
+		Vec3 bL = ((CosDegrees(endDegree) * jBasis + SinDegrees(endDegree) * kBasis) * radius);
+
+		// UVs
+		AABB2 quadUVs = AABB2(uvLeft, 0.f, uvRight, 1.f);
+		Vec2 uv_bR_disc = GetDiscUV(bR, start, jBasis, kBasis, radius);
+		Vec2 uv_bL_disc = GetDiscUV(bL, start, jBasis, kBasis, radius);
+		Vec2 uv_center_bottom = Vec2::ONEHALF;
+
+		// Weights and Indices
+		Vec4 boneWeights = Vec4(1.f, 0.f, 0.f, 0.f);
+		IntVec4 boneIndices = IntVec4(boneIndex, 0, 0, 0);
+
+		// Cone quad
+		AddSkinnedVertsForQuad3D(vertexes, bR + coneBottom, bL + coneBottom, coneTop, coneTop, boneIndex, color, quadUVs);
+
+		// Cone bottom disc
+		vertexes.push_back(Vertex_PCUTBNSkinned(bL + coneBottom, color, uv_bL_disc, Vec3::ZERO, Vec3::ZERO, -iBasis, boneWeights, boneIndices));
+		vertexes.push_back(Vertex_PCUTBNSkinned(bR + coneBottom, color, uv_bR_disc, Vec3::ZERO, Vec3::ZERO, -iBasis, boneWeights, boneIndices));
+		vertexes.push_back(Vertex_PCUTBNSkinned(coneBottom, color, uv_center_bottom, Vec3::ZERO, Vec3::ZERO, -iBasis, boneWeights, boneIndices));
+	}
 }
