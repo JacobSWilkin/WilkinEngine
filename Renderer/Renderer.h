@@ -145,6 +145,7 @@ enum class VertexType
 {
 	VERTEX_PCU,
 	VERTEX_PCUTBN,
+	VERTEX_PCUTBN_SKINNED,
 	COUNT
 };
 // -------------------------------------------------------------------------------------------------------

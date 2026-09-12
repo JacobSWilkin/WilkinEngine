@@ -1,4 +1,7 @@
 #include "ThirdParty/stb/stb_image.h"
+#include "ThirdParty/ImGui/imgui.h"
+#include "ThirdParty/ImGui/imgui_impl_win32.h"
+#include "ThirdParty/ImGui/imgui_impl_dx11.h"
 //-----------------------------------------------------------------------------------------------
 
 #define WIN32_LEAN_AND_MEAN		// Always #define this before #including <windows.h>
@@ -368,10 +371,26 @@ void Renderer::Startup()
 	{
 		ERROR_AND_DIE("CreateDepthStencilState for DepthMode::READ_WRITE_LESS_EQUAL failed.");
 	}
+
+	// Initialize ImGui
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+
+	ImGuiIO& io = ImGui::GetIO();
+	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+	ImGui::StyleColorsDark();
+
+	ImGui_ImplWin32_Init(Window::s_mainWindow->GetHwnd());
+	ImGui_ImplDX11_Init(m_device, m_deviceContext);
 }
 
 void Renderer::BeginFrame()
 {
+	ImGui_ImplDX11_NewFrame();
+	ImGui_ImplWin32_NewFrame();
+	ImGui::NewFrame();
+
 	// Set PerFrame Constant Buffer
 	SetPerFrameConstants(0, 0.f);
 
@@ -381,6 +400,9 @@ void Renderer::BeginFrame()
 
 void Renderer::EndFrame()
 {
+	ImGui::Render();
+	ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+
 	// Present the swap chain
 	HRESULT hr;
 	hr = m_swapChain->Present(0, 0);
@@ -392,6 +414,10 @@ void Renderer::EndFrame()
 
 void Renderer::Shutdown()
 {
+	ImGui_ImplDX11_Shutdown();
+	ImGui_ImplWin32_Shutdown();
+	ImGui::DestroyContext();
+
 	// Delete all textures in the cache
 	for (size_t textureIndex = 0; textureIndex < m_loadedTextures.size(); ++textureIndex)
 	{
@@ -855,7 +881,7 @@ Shader* Renderer::CreateShader(char const* shaderName, char const* shaderSource,
 		hr = m_device->CreateInputLayout(inputElementDesc, numElements, vertexShaderBytes.data(), vertexShaderBytes.size(), &inputLayout);
 		if (!SUCCEEDED(hr))
 		{
-			ERROR_AND_DIE("Could not create input layout");
+			ERROR_AND_DIE("Could not create vertex PCU input layout");
 		}
 	}
 	else if (vertexType == VertexType::VERTEX_PCUTBN)
@@ -874,7 +900,28 @@ Shader* Renderer::CreateShader(char const* shaderName, char const* shaderSource,
 		hr = m_device->CreateInputLayout(inputElementDesc, numElements, vertexShaderBytes.data(), vertexShaderBytes.size(), &inputLayout);
 		if (!SUCCEEDED(hr))
 		{
-			ERROR_AND_DIE("Could not create input layout");
+			ERROR_AND_DIE("Could not create vertex PCUTBN input layout");
+		}
+	}
+	else if (vertexType == VertexType::VERTEX_PCUTBN_SKINNED)
+	{
+		D3D11_INPUT_ELEMENT_DESC inputElementDesc[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"COLOR", 0, DXGI_FORMAT_R8G8B8A8_UNORM, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"TANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT,0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"BITANGENT", 0, DXGI_FORMAT_R32G32B32_FLOAT,0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT,0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"BONEWEIGHTS", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"BONEINDICES", 0, DXGI_FORMAT_R32G32B32A32_SINT,  0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+		};
+
+		// Create Input Layout
+		UINT numElements = ARRAYSIZE(inputElementDesc);
+		hr = m_device->CreateInputLayout(inputElementDesc, numElements, vertexShaderBytes.data(), vertexShaderBytes.size(), &inputLayout);
+		if (!SUCCEEDED(hr))
+		{
+			ERROR_AND_DIE("Could not create skinned vertex input layout");
 		}
 	}
 
