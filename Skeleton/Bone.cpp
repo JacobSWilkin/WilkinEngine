@@ -37,6 +37,12 @@ void Bone::SetLocalBoneScale(Vec3 const& scale)
 	m_localScale = scale;
 }
 
+void Bone::ResetToBindPose()
+{
+	m_localPosition = m_bindLocalPosition;
+	m_localRotation = m_bindLocalRotation;
+}
+
 bool Bone::IsRootBone() const
 {
 	return m_parentBoneIndex == -1;
@@ -62,9 +68,19 @@ Vec3 Bone::GetWorldBonePosition3D() const
 	return m_worldBoneTransform.GetTranslation3D();
 }
 
+Quat Bone::GetWorldBoneRotation3D() const
+{
+	return Quat::MakeFromMat44(m_worldBoneTransform);
+}
+
 Mat44 Bone::GetLocalBoneTransformMatrix() const
 {
 	return Mat44::MakeTransform(m_localPosition, m_localRotation, m_localScale);
+}
+
+Mat44 Bone::GetWorldBoneTransform() const
+{
+	return m_worldBoneTransform;
 }
 
 float Bone::GetDistanceToBone(Bone const& nextBone) const

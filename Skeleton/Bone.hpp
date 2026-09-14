@@ -42,6 +42,7 @@ public:
 	void SetLocalBonePosition(Vec3 const& position);
 	void SetLocalBoneRotation(Quat const& rotation);
 	void SetLocalBoneScale(Vec3 const& scale);
+	void ResetToBindPose();
 
 	// Bone accessors
 	bool  IsRootBone() const;
@@ -49,7 +50,9 @@ public:
 	Vec2  GetWorldBonePosition2D() const;
 	Vec3  GetLocalBonePosition3D() const;
 	Vec3  GetWorldBonePosition3D() const;
+	Quat  GetWorldBoneRotation3D() const;
 	Mat44 GetLocalBoneTransformMatrix() const;
+	Mat44 GetWorldBoneTransform() const;
 	float GetDistanceToBone(Bone const& nextBone) const;
 
 public:
@@ -62,10 +65,16 @@ public:
 	Vec3 m_localPosition = Vec3::ZERO;
 	Quat m_localRotation = Quat::DEFAULT;
 	Vec3 m_localScale	 = Vec3::ONE;
+	Vec3 m_bindLocalPosition = Vec3::ZERO;
+	Vec3 m_bindWorldPosition = Vec3::ZERO;
+	Quat m_bindLocalRotation = Quat::DEFAULT;
 	
 	// Combined transform data
 	Mat44 m_worldBoneTransform = Mat44();
 
 	// Constraint for joint behavior and limits
 	BoneConstraint m_boneConstraint;
+
+	// Inverse bind pose
+	Mat44 m_inverseBindPose = Mat44();
 };
