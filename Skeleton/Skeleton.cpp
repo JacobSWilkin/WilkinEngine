@@ -17,17 +17,28 @@ void Skeleton::UpdateSkeletonPose()
 	}
 }
 
+
+// -----------------------------------------------------------------------------
 void Skeleton::ResetSkeletonPose()
 {
 	for (int boneIndex = 0; boneIndex < static_cast<int>(m_bones.size()); ++boneIndex)
 	{
 		Bone& bone = m_bones[boneIndex];
-		bone.SetLocalBoneTransform(Vec3::ZERO, Quat::DEFAULT, Vec3::ONE);
+		bone.SetLocalBoneTransform(bone.m_bindLocalPosition, bone.m_bindLocalRotation, Vec3::ONE);
 	}
 
 	UpdateSkeletonPose();
 }
-// -----------------------------------------------------------------------------
+
+void Skeleton::CaptureBindPose()
+{
+	for (int boneIndex = 0; boneIndex < static_cast<int>(m_bones.size()); ++boneIndex)
+	{
+		Bone& bone = m_bones[boneIndex];
+		bone.m_bindLocalPosition = bone.m_localPosition;
+		bone.m_bindLocalRotation = bone.m_localRotation;
+	}
+}
 
 /* HELPER UTILITY METHODS */
 // -----------------------------------------------------------------------------
@@ -101,7 +112,7 @@ void Skeleton::ApplyIKToBone(Bone& bone, float angle, Vec3 const& axisOfRotation
 	bone.SetLocalBoneRotation(newRotation);
 }
 
-void Skeleton::SolveTwoBoneIK(int shoulderIndex, int elbowIndex, int handIndex, Vec3 targetPos)
+void Skeleton::SolveTwoBoneIK(int shoulderIndex, int elbowIndex, int handIndex, Vec3 targetPos, Vec3 poleVector)
 {
 	Bone* shoulder = GetBoneByIndex(shoulderIndex);
 	Bone* elbow = GetBoneByIndex(elbowIndex);
@@ -118,12 +129,7 @@ void Skeleton::SolveTwoBoneIK(int shoulderIndex, int elbowIndex, int handIndex, 
 	Vec3 target = targetPos;
 	float distToTarget = (target - bonePosA).GetLength();
 
-	// Unreachable case check, stop rotations
-	if (distToTarget >= maxReach)
-	{
-		return;
-	}
-
+	// Unreachable case check
 	if (distToTarget > maxReach)
 	{
 		target = bonePosA + (target - bonePosA).GetNormalized() * maxReach;
@@ -133,20 +139,36 @@ void Skeleton::SolveTwoBoneIK(int shoulderIndex, int elbowIndex, int handIndex, 
 	float height = sqrtf(GetMax(0.f, lenAB * lenAB - adjacent * adjacent));
 
 	Vec3 shoulderToTarget = (target - bonePosA).GetNormalized();
-	Vec3 arbitrary = Vec3::YAXE;
-	if (fabsf(DotProduct3D(shoulderToTarget, arbitrary)) > 0.999f)
+	Vec3 shoulderToPole = (poleVector - bonePosA).GetNormalized();
+	Vec3 planeNormal = CrossProduct3D(shoulderToTarget, shoulderToPole).GetNormalized();
+	if (planeNormal.GetLengthSquared() < 0.0001f)
 	{
-		arbitrary = Vec3::ZAXE;
+		Vec3 arbitrary = fabsf(shoulderToTarget.z) < 0.99f ? Vec3::ZAXE : Vec3::XAXE;
+		planeNormal = CrossProduct3D(shoulderToTarget, arbitrary).GetNormalized();
 	}
+	Vec3 perp = CrossProduct3D(planeNormal, shoulderToTarget).GetNormalized();
 
-	Vec3 perp = CrossProduct3D(shoulderToTarget, arbitrary).GetNormalized();
+	// Ensuring perpendicular vector points toward pole vector
+	if (DotProduct3D(perp, shoulderToPole) < 0.0f)
+	{
+		perp = -perp;
+	}
 	Vec3 elbowNewPos = bonePosA + shoulderToTarget * adjacent + perp * height;
 
 	// Shoulder rotation
 	Vec3 AB_current = (bonePosB - bonePosA).GetNormalized();
 	Vec3 AB_goal = (elbowNewPos - bonePosA).GetNormalized();
 	Quat shoulderRot = Quat::MakeRotationFromTwoVectors(AB_current, AB_goal);
-	Quat newShoulderRotation = shoulderRot * shoulder->m_localRotation;
+	Quat parentWorldRot = Quat::DEFAULT;
+	if (shoulder->m_parentBoneIndex != -1)
+	{
+		Bone* parent = GetBoneByIndex(shoulder->m_parentBoneIndex);
+		parentWorldRot = parent->GetWorldBoneRotation3D();
+	}
+
+	// Converting world delta into local space
+	Quat localDelta = parentWorldRot.QuatInverse() * shoulderRot * parentWorldRot;
+	Quat newShoulderRotation = localDelta * shoulder->m_localRotation;
 	shoulder->SetLocalBoneRotation(newShoulderRotation);
 
 	UpdateSkeletonPose();
@@ -158,8 +180,92 @@ void Skeleton::SolveTwoBoneIK(int shoulderIndex, int elbowIndex, int handIndex, 
 	Vec3 BC_current = (bonePosC - bonePosB).GetNormalized();
 	Vec3 BC_goal = (target - bonePosB).GetNormalized();
 	Quat elbowRot = Quat::MakeRotationFromTwoVectors(BC_current, BC_goal);
-	Quat newElbowRotation = elbowRot * elbow->m_localRotation;
+	parentWorldRot = shoulder->GetWorldBoneRotation3D(); // elbow's parent
+
+	localDelta = parentWorldRot.QuatInverse() * elbowRot * parentWorldRot;
+
+	Quat newElbowRotation = localDelta * elbow->m_localRotation;
 	elbow->SetLocalBoneRotation(newElbowRotation);
+
+	UpdateSkeletonPose();
+}
+
+void Skeleton::SolveTwoBoneIKConstrained(int shoulderIndex, int elbowIndex, int handIndex, Vec3 targetPos, Vec3 poleVector)
+{
+	Bone* shoulder = GetBoneByIndex(shoulderIndex);
+	Bone* elbow = GetBoneByIndex(elbowIndex);
+	Bone* hand = GetBoneByIndex(handIndex);
+
+	Vec3 bonePosA = shoulder->GetWorldBonePosition3D();
+	Vec3 bonePosB = elbow->GetWorldBonePosition3D();
+	Vec3 bonePosC = hand->GetWorldBonePosition3D();
+
+	float lenAB = (bonePosB - bonePosA).GetLength();
+	float lenBC = (bonePosC - bonePosB).GetLength();
+	float maxReach = lenAB + lenBC;
+
+	Vec3 target = targetPos;
+	float distToTarget = (target - bonePosA).GetLength();
+
+	// Unreachable case check
+	if (distToTarget > maxReach)
+	{
+		target = bonePosA + (target - bonePosA).GetNormalized() * maxReach;
+	}
+
+	float adjacent = (lenAB * lenAB + distToTarget * distToTarget - lenBC * lenBC) / (2.f * lenAB);
+	float height = sqrtf(GetMax(0.f, lenAB * lenAB - adjacent * adjacent));
+
+	Vec3 shoulderToTarget = (target - bonePosA).GetNormalized();
+	Vec3 shoulderToPole = (poleVector - bonePosA).GetNormalized();
+	Vec3 planeNormal = CrossProduct3D(shoulderToTarget, shoulderToPole).GetNormalized();
+	if (planeNormal.GetLengthSquared() < 0.0001f)
+	{
+		Vec3 arbitrary = fabsf(shoulderToTarget.z) < 0.99f ? Vec3::ZAXE : Vec3::XAXE;
+		planeNormal = CrossProduct3D(shoulderToTarget, arbitrary).GetNormalized();
+	}
+	Vec3 perp = CrossProduct3D(planeNormal, shoulderToTarget).GetNormalized();
+
+	// Ensuring perpendicular vector points toward pole vector
+	if (DotProduct3D(perp, shoulderToPole) < 0.0f)
+	{
+		perp = -perp;
+	}
+	Vec3 elbowNewPos = bonePosA + shoulderToTarget * adjacent + perp * height;
+
+	// Shoulder rotation
+	Vec3 AB_current = (bonePosB - bonePosA).GetNormalized();
+	Vec3 AB_goal = (elbowNewPos - bonePosA).GetNormalized();
+	Quat shoulderRot = Quat::MakeRotationFromTwoVectors(AB_current, AB_goal);
+	Quat parentWorldRot = Quat::DEFAULT;
+	if (shoulder->m_parentBoneIndex != -1)
+	{
+		Bone* parent = GetBoneByIndex(shoulder->m_parentBoneIndex);
+		parentWorldRot = parent->GetWorldBoneRotation3D();
+	}
+
+	// Converting world delta into local space
+	Quat localDelta = parentWorldRot.QuatInverse() * shoulderRot * parentWorldRot;
+	Quat newShoulderRotation = localDelta * shoulder->m_localRotation;
+	Quat constrainedShoulder = shoulder->m_boneConstraint.ApplyRotationConstraint(newShoulderRotation);
+	shoulder->SetLocalBoneRotation(constrainedShoulder);
+
+	UpdateSkeletonPose();
+
+	bonePosB = elbow->GetWorldBonePosition3D();
+	bonePosC = hand->GetWorldBonePosition3D();
+
+	// Elbow rotation
+	Vec3 BC_current = (bonePosC - bonePosB).GetNormalized();
+	Vec3 BC_goal = (target - bonePosB).GetNormalized();
+	Quat elbowRot = Quat::MakeRotationFromTwoVectors(BC_current, BC_goal);
+	parentWorldRot = shoulder->GetWorldBoneRotation3D(); // elbow's parent
+
+	localDelta = parentWorldRot.QuatInverse() * elbowRot * parentWorldRot;
+
+	Quat newElbowRotation = localDelta * elbow->m_localRotation;
+	Quat constrainedElbow = elbow->m_boneConstraint.ApplyRotationConstraint(newElbowRotation);
+	elbow->SetLocalBoneRotation(constrainedElbow);
 
 	UpdateSkeletonPose();
 }
@@ -223,7 +329,20 @@ void Skeleton::SolveCCDIK(std::vector<int> const& chainIndices, Vec3 const& targ
 				{
 					axis.Normalize();
 					Quat rotation = Quat::MakeFromAxisAngle(axis, angle);
-					m_bones[jointIndex].SetLocalBoneRotation(rotation * m_bones[jointIndex].m_localRotation);
+
+					Quat parentWorldRot = Quat::DEFAULT;
+					int parentIndex = m_bones[jointIndex].m_parentBoneIndex;
+					if (parentIndex != -1)
+					{
+						parentWorldRot = m_bones[parentIndex].GetWorldBoneRotation3D();
+					}
+
+					// Converting world delta to local delta
+					Quat localDelta = parentWorldRot.QuatInverse() * rotation * parentWorldRot;
+
+					// Apply to local rotation
+					Quat newLocalRot = localDelta * m_bones[jointIndex].m_localRotation;
+					m_bones[jointIndex].SetLocalBoneRotation(newLocalRot);
 				}
 			}
 		}
@@ -267,15 +386,29 @@ void Skeleton::SolveCCDIK(std::vector<int> const& chainIndices, Vec3 const& targ
 				break;
 			}
 			// Rotate to target if there is an angle greater than our threshold
-			else if (angle > 0.001f)
+			if (angle > threshold)
 			{
 				Vec3 rotationAxis = CrossProduct3D(toEndEffector, toTarget);
+				float rotationAxisLengthSquared = rotationAxis.GetLengthSquared();
 				
-				if (rotationAxis.GetLengthSquared() > 0.00001f)
+				if (rotationAxisLengthSquared > 0.00001f)
 				{
+					rotationAxis.Normalize();
 					Quat rotationQuat = Quat::MakeFromAxisAngle(rotationAxis, angle);
-					Quat currentLocalRotation = m_bones[jointIndex].m_localRotation;
-					m_bones[jointIndex].SetLocalBoneRotation(rotationQuat * currentLocalRotation);
+
+					Quat parentWorldRot = Quat::DEFAULT;
+					int parentIndex = m_bones[jointIndex].m_parentBoneIndex;
+					if (parentIndex != -1)
+					{
+						parentWorldRot = m_bones[parentIndex].GetWorldBoneRotation3D();
+					}
+
+					// Converting world delta to local delta
+					Quat localDelta = parentWorldRot.QuatInverse() * rotationQuat * parentWorldRot;
+
+					// Apply to local rotation
+					Quat newLocalRot = localDelta * m_bones[jointIndex].m_localRotation;
+					m_bones[jointIndex].SetLocalBoneRotation(newLocalRot);
 
 					UpdateSkeletonPose();
 				}
@@ -354,12 +487,23 @@ void Skeleton::SolveCCDIKConstrained(std::vector<int> const& chainIndices, Vec3 
 				Vec3 axis = CrossProduct3D(toNext, direction);
 				if (axis.GetLengthSquared() > 0.00001f)
 				{
+					axis.Normalize();
 					Quat rotation = Quat::MakeFromAxisAngle(axis, angle);
-					Quat currentLocalRotation = m_bones[jointIndex].m_localRotation;
-					Quat newRotation = rotation * currentLocalRotation;
 
-					newRotation = m_bones[jointIndex].m_boneConstraint.ApplyRotationConstraint(newRotation);
-					m_bones[jointIndex].SetLocalBoneRotation(newRotation);
+					Quat parentWorldRot = Quat::DEFAULT;
+					int parentIndex = m_bones[jointIndex].m_parentBoneIndex;
+					if (parentIndex != -1)
+					{
+						parentWorldRot = m_bones[parentIndex].GetWorldBoneRotation3D();
+					}
+
+					// Converting world delta to local delta
+					Quat localDelta = parentWorldRot.QuatInverse() * rotation * parentWorldRot;
+
+					// Apply to local rotation
+					Quat newLocalRot = localDelta * m_bones[jointIndex].m_localRotation;
+					newLocalRot = m_bones[jointIndex].m_boneConstraint.ApplyRotationConstraint(newLocalRot);
+					m_bones[jointIndex].SetLocalBoneRotation(newLocalRot);
 				}
 			}
 		}
@@ -415,12 +559,24 @@ void Skeleton::SolveCCDIKConstrained(std::vector<int> const& chainIndices, Vec3 
 
 				if (rotationAxis.GetLengthSquared() > 0.00001f)
 				{
+					rotationAxis.Normalize();
 					Quat rotationQuat = Quat::MakeFromAxisAngle(rotationAxis, angle);
-					Quat currentLocalRotation = m_bones[jointIndex].m_localRotation;
-					Quat newRotation = rotationQuat * currentLocalRotation;
 
-					newRotation = m_bones[jointIndex].m_boneConstraint.ApplyRotationConstraint(newRotation);
-					m_bones[jointIndex].SetLocalBoneRotation(newRotation);
+					Quat parentWorldRot = Quat::DEFAULT;
+					int parentIndex = m_bones[jointIndex].m_parentBoneIndex;
+					if (parentIndex != -1)
+					{
+						parentWorldRot = m_bones[parentIndex].GetWorldBoneRotation3D();
+					}
+
+					// Converting world delta to local delta
+					Quat localDelta = parentWorldRot.QuatInverse() * rotationQuat * parentWorldRot;
+
+					// Apply to local rotation
+					Quat newLocalRot = localDelta * m_bones[jointIndex].m_localRotation;
+
+					newLocalRot = m_bones[jointIndex].m_boneConstraint.ApplyRotationConstraint(newLocalRot);
+					m_bones[jointIndex].SetLocalBoneRotation(newLocalRot);
 
 					UpdateSkeletonPose();
 				}
@@ -587,6 +743,64 @@ void Skeleton::AddVertsForBone3D(std::vector<Vertex_PCU>& boneVerts, Bone const&
 	AddVertsForSphere3D(boneVerts, bonePosition, style.m_jointRadius, style.m_jointColor);
 }
 
+void Skeleton::AddVertsForBoneTBN3D(std::vector<Vertex_PCUTBN>& boneVerts, Bone const& bone, SkeletonStyle const& style)
+{
+	// Check if bone is being drawn
+	if (!bone.m_isRenderable)
+	{
+		return;
+	}
+
+	// Get current position of bone in world space
+	Vec3 bonePosition = bone.GetWorldBonePosition3D();
+	Vec3 parentBonePosition = Vec3::ZERO;
+
+	// Check if bone has a parent bone
+	if (bone.m_parentBoneIndex >= 0)
+	{
+		parentBonePosition = m_bones[bone.m_parentBoneIndex].GetWorldBonePosition3D();
+	}
+	else
+	{
+		parentBonePosition = bonePosition;
+	}
+
+	// Cylinder is drawn between bone and its parent bone
+	AddVertsForCylinder3D(boneVerts, bonePosition, parentBonePosition, style.m_boneRadius, style.m_boneColor);
+
+	// Sphere is drawn as the joint
+	AddVertsForSphere3D(boneVerts, bonePosition, style.m_jointRadius, style.m_jointColor);
+}
+
+void Skeleton::AddVertsForBoneIndexed3D(std::vector<Vertex_PCUTBN>& boneVerts, std::vector<unsigned int>& boneIndices, Bone const& bone, SkeletonStyle const& style)
+{
+	// Check if bone is being drawn
+	if (!bone.m_isRenderable)
+	{
+		return;
+	}
+
+	// Get current position of bone in world space
+	Vec3 bonePosition = bone.GetWorldBonePosition3D();
+	Vec3 parentBonePosition = Vec3::ZERO;
+
+	// Check if bone has a parent bone
+	if (bone.m_parentBoneIndex >= 0)
+	{
+		parentBonePosition = m_bones[bone.m_parentBoneIndex].GetWorldBonePosition3D();
+	}
+	else
+	{
+		parentBonePosition = bonePosition;
+	}
+
+	// Cylinder is drawn between bone and its parent bone
+	AddVertsForCylinderOriented3D(boneVerts, boneIndices, bonePosition, parentBonePosition, style.m_boneRadius, style.m_boneColor, AABB2::ZERO_TO_ONE, 16);
+
+	// Sphere is drawn as the joint
+	AddVertsForSphere3D(boneVerts, boneIndices, bonePosition, style.m_jointRadius, style.m_jointColor);
+}
+
 void Skeleton::AddVertsForSkeleton2D(std::vector<Vertex_PCU>& boneVerts, SkeletonStyle const& style)
 {
 	for (int boneIndex = 0; boneIndex < static_cast<int>(m_bones.size()); ++boneIndex)
@@ -602,6 +816,24 @@ void Skeleton::AddVertsForSkeleton3D(std::vector<Vertex_PCU>& boneVerts, Skeleto
 	{
 		Bone const& bone = m_bones[boneIndex];
 		AddVertsForBone3D(boneVerts, bone, style);
+	}
+}
+
+void Skeleton::AddVertsForSkeletonTBN3D(std::vector<Vertex_PCUTBN>& boneVerts, SkeletonStyle const& style)
+{
+	for (int boneIndex = 0; boneIndex < static_cast<int>(m_bones.size()); ++boneIndex)
+	{
+		Bone const& bone = m_bones[boneIndex];
+		AddVertsForBoneTBN3D(boneVerts, bone, style);
+	}
+}
+
+void Skeleton::AddVertsForSkeletonIndexed3D(std::vector<Vertex_PCUTBN>& boneVerts, std::vector<unsigned int>& boneIndices, SkeletonStyle const& style)
+{
+	for (int boneIndex = 0; boneIndex < static_cast<int>(m_bones.size()); ++boneIndex)
+	{
+		Bone const& bone = m_bones[boneIndex];
+		AddVertsForBoneIndexed3D(boneVerts, boneIndices, bone, style);
 	}
 }
 

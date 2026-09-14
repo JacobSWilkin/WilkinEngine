@@ -20,12 +20,17 @@ class Skeleton
 public:
 	void UpdateSkeletonPose();
 	void ResetSkeletonPose();
+	void CaptureBindPose();
 
 	// Geometry
 	void AddVertsForBone2D(std::vector<Vertex_PCU>& boneVerts, Bone const& bone, SkeletonStyle const& style = SkeletonStyle());
 	void AddVertsForBone3D(std::vector<Vertex_PCU>& boneVerts, Bone const& bone, SkeletonStyle const& style = SkeletonStyle());
+	void AddVertsForBoneTBN3D(std::vector<Vertex_PCUTBN>& boneVerts, Bone const& bone, SkeletonStyle const& style = SkeletonStyle());
+	void AddVertsForBoneIndexed3D(std::vector<Vertex_PCUTBN>& boneVerts, std::vector<unsigned int>& boneIndices, Bone const& bone, SkeletonStyle const& style = SkeletonStyle());
 	void AddVertsForSkeleton2D(std::vector<Vertex_PCU>& boneVerts, SkeletonStyle const& style = SkeletonStyle());
 	void AddVertsForSkeleton3D(std::vector<Vertex_PCU>& boneVerts, SkeletonStyle const& style = SkeletonStyle());
+	void AddVertsForSkeletonTBN3D(std::vector<Vertex_PCUTBN>& boneVerts, SkeletonStyle const& style = SkeletonStyle());
+	void AddVertsForSkeletonIndexed3D(std::vector<Vertex_PCUTBN>& boneVerts, std::vector<unsigned int>& boneIndices, SkeletonStyle const& style = SkeletonStyle());
 	void AddVertsForBoneHierarchy(std::vector<Vertex_PCU>& textVerts, BitmapFont& font, float startYPos, float indentStep = 2.f);
 
 	// Helper utilities
@@ -39,7 +44,8 @@ public:
 	void  ApplyIKToBone(Bone& bone, float angle, Vec3 const& axisOfRotation);
 
 	// IK
-	void SolveTwoBoneIK(int shoulderIndex, int elbowIndex, int handIndex, Vec3 targetPos);
+	void SolveTwoBoneIK(int shoulderIndex, int elbowIndex, int handIndex, Vec3 targetPos, Vec3 poleVector = Vec3::YAXE);
+	void SolveTwoBoneIKConstrained(int shoulderIndex, int elbowIndex, int handIndex, Vec3 targetPos, Vec3 poleVector = Vec3::YAXE);
 	void SolveCCDIK(std::vector<int> const& chainIndices, Vec3 const& targetPosition, int maxIterations = 10, float threshold = 0.01f);
 	void SolveCCDIKConstrained(std::vector<int> const& chainIndices, Vec3 const& targetPosition, int maxIterations = 10, float threshold = 0.01f);
 	void SolveFABRIK(std::vector<int> const& chainIndices, Vec3 const& targetPosition, int maxIterations = 10, float threshold = 0.01f);
