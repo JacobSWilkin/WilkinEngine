@@ -2,6 +2,8 @@
 #include "Engine/Core/ErrorWarningAssert.hpp"
 #include "Engine/Math/MathUtils.h"
 #include "Engine/Math/FloatRange.hpp"
+#include "Engine/Math/ConvexPoly2D.hpp"
+#include "Engine/Math/ConvexHull2D.hpp"
 
 RaycastResult2D RaycastVsDisc2D(Vec2 startPos, Vec2 fwdNormal, float maxDist, Vec2 discCenter, float discRadius)
 {
@@ -199,6 +201,173 @@ RaycastResult2D RaycastVsAABB2D(Vec2 startPos, Vec2 fwdNormal, float maxDist, AA
 // 	}
 // 
 // 	return raycastResult;
+}
+
+RaycastResult2D RaycastVsPlane2D(Vec2 startPos, Vec2 fwdNormal, float maxDist, Plane2 const& plane)
+{
+	RaycastResult2D raycastResult;
+
+	float planeNormalDotStartPos   = DotProduct2D(plane.m_planeNormal, startPos) - plane.m_distance;
+	float planeNormalDotRayMaxDist = DotProduct2D(plane.m_planeNormal, startPos + fwdNormal * maxDist) - plane.m_distance;
+	float planeNormalDotRayNormal  = DotProduct2D(plane.m_planeNormal, fwdNormal);
+
+	// Check if ray is parallel or pointing away from our plane
+	if (planeNormalDotRayNormal >= 0.f)
+	{
+		return raycastResult;
+	}
+
+	// Check for if we are straddling the plane
+	if ((planeNormalDotStartPos * planeNormalDotRayMaxDist) > 0.f)
+	{
+		return raycastResult;
+	}
+
+	float t = planeNormalDotStartPos / (planeNormalDotStartPos - planeNormalDotRayMaxDist);
+	float impactDist = t * maxDist;
+
+	// Check if our impact distance is greater than our max distance
+	if (t < 0.f || t > 1.f)
+	{
+		return raycastResult;
+	}
+
+	// Check and set impact normal
+	if (plane.IsPointInFront(startPos))
+	{
+		raycastResult.m_impactNormal = plane.m_planeNormal;
+	}
+	else
+	{
+		raycastResult.m_impactNormal = -plane.m_planeNormal;
+	}
+
+	// Verify our hit
+	raycastResult.m_didImpact  = true;
+	raycastResult.m_impactDist = impactDist;
+	raycastResult.m_impactPos  = startPos + impactDist * fwdNormal;
+	return raycastResult;
+}
+
+RaycastResult2D RaycastVsConvexPoly2D(Vec2 startPos, Vec2 fwdNormal, float maxDist, ConvexPoly2D const& convexPoly)
+{
+	RaycastResult2D raycastResult;
+
+	// Is Point Inside Check
+	if (convexPoly.IsPointInside(startPos))
+	{
+		raycastResult.m_didImpact = true;
+		raycastResult.m_impactNormal = -fwdNormal;
+		raycastResult.m_impactPos = startPos;
+		raycastResult.m_impactDist = 0.f;
+		return raycastResult;
+	}
+
+	std::vector<Vec2> const& verts = convexPoly.GetVerts();
+	int vertexCount = static_cast<int>(verts.size());
+
+	// Test ray against every edge on our convex shape
+	for (int posIndex = 0; posIndex < vertexCount; ++posIndex)
+	{
+		Vec2 const& posA = verts[posIndex];
+		Vec2 const& posB = verts[(posIndex + 1) % vertexCount];
+
+		RaycastResult2D impactResult = RaycastVsLineSegment2D(startPos, fwdNormal, maxDist, posA, posB);
+
+		if (!impactResult.m_didImpact)
+		{
+			continue;
+		}
+
+		// Keeping our nearest impact
+		if (!raycastResult.m_didImpact || impactResult.m_impactDist < raycastResult.m_impactDist)
+		{
+			raycastResult = impactResult;
+		}
+	}
+
+	return raycastResult;
+}
+
+RaycastResult2D RaycastVsConvexHull2D(Vec2 startPos, Vec2 fwdNormal, float maxDist, ConvexHull2D const& convexHull)
+{
+	RaycastResult2D raycastResult;
+
+	// Is Point Inside Check
+	if (convexHull.IsPointInside(startPos))
+	{
+		raycastResult.m_didImpact = true;
+		raycastResult.m_impactNormal = -fwdNormal;
+		raycastResult.m_impactPos = startPos;
+		raycastResult.m_impactDist = 0.f;
+		return raycastResult;
+	}
+
+	// Rules:
+	// Impact point is the LAST entry point.
+	// Time in shape: Time from last entry to the first exit.
+	// Find the last entrance and get earliest exit and then get the midpoint between the two to see if it is inside the shape.
+
+	float entryTime = 0.f;
+	float exitTime = maxDist;
+
+	for (Plane2 const& plane : convexHull.m_boundingPlanes)
+	{
+		float numerator = plane.m_distance - DotProduct2D(plane.m_planeNormal, startPos);
+		float denominator = DotProduct2D(plane.m_planeNormal, fwdNormal);
+
+		// Check for if ray is parallel to plane
+		if (fabsf(denominator) < 0.0001f)
+		{
+			if (numerator < 0.f)
+			{
+				return raycastResult;
+			}
+			else
+			{
+				continue;
+			}
+		}
+
+		float t = numerator / denominator;
+
+		if (denominator < 0.f)
+		{
+			entryTime = GetMax(entryTime, t);
+		}
+		else
+		{
+			exitTime = GetMin(exitTime, t);
+		}
+
+		if (entryTime > exitTime)
+		{
+			return raycastResult;
+		}
+	}
+
+	if (exitTime < 0.f || entryTime > exitTime)
+	{
+		return raycastResult;
+	}
+
+	float impactDist = GetMax(entryTime, 0.f);
+
+	raycastResult.m_didImpact = true;
+	raycastResult.m_impactDist = impactDist;
+	raycastResult.m_impactPos = startPos + fwdNormal * impactDist;
+
+	// Find normal of plane that caused the entry
+	for (Plane2 const& plane : convexHull.m_boundingPlanes)
+	{
+		if (fabsf(DotProduct2D(plane.m_planeNormal, raycastResult.m_impactPos) - plane.m_distance) < 0.001f)
+		{
+			raycastResult.m_impactNormal = plane.m_planeNormal;
+			break;
+		}
+	}
+
+	return raycastResult;
 }
 
 RaycastResult3D RaycastVsSphere3D(Vec3 rayStart, Vec3 fwdNormal, float rayLength, Vec3 sphereCenter, float sphereRadius)
